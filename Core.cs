@@ -1,8 +1,4 @@
-﻿using Lava.Net.Sources;
-using Newtonsoft.Json;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 namespace Lava.Net
 {
@@ -21,7 +17,7 @@ namespace Lava.Net
         public async Task MainAsync()
         {
             await SocketServer.StartAsync();
-            await Task.Delay(1000000000);
+            await Task.Delay(-1);
         }
     }
 }

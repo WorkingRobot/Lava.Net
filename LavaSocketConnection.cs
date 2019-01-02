@@ -37,7 +37,7 @@ namespace Lava.Net
                             await Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, result.CloseStatusDescription, CancellationToken.None);
                             break;
                         case WebSocketMessageType.Binary:
-                            Console.WriteLine("WOAH " + Encoding.UTF8.GetString(buffer));
+                            Console.WriteLine("Recieved binary input: " + Encoding.UTF8.GetString(buffer));
                             break;
                         case WebSocketMessageType.Text:
                             Console.WriteLine(Encoding.UTF8.GetString(buffer));

@@ -6,6 +6,7 @@ namespace Lava.Net
     class LavaGuildConnection
     {
         public readonly ulong GuildId;
+
         public LavaGuildConnection(ulong guildId)
         {
             GuildId = guildId;

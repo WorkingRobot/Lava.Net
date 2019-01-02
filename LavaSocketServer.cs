@@ -1,31 +1,27 @@
 ﻿using Lava.Net.Sources;
 using Newtonsoft.Json;
 using System;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Lava.Net
 {
     class LavaSocketServer
     {
-        private readonly string listenerUri;
-
-        int count;
+        private readonly string ListenerUri;
 
         public LavaSocketServer(string listenerUri)
         {
-            this.listenerUri = listenerUri;
+            ListenerUri = listenerUri;
         }
 
         public async Task StartAsync()
         {
             HttpListener listener = new HttpListener();
-            listener.Prefixes.Add(listenerUri);
+            listener.Prefixes.Add(ListenerUri);
             listener.Start();
             Console.WriteLine("Listening...");
 
@@ -48,7 +44,7 @@ namespace Lava.Net
             switch (context.Request.Url.LocalPath)
             {
                 case "/loadtracks":
-                    var resp = await LoadTracks(context.Request.QueryString);
+                    var resp = await LoadTracks(context.Request.QueryString.Get("identifier"));
                     await context.Response.OutputStream.WriteAsync(resp.Response);
                     context.Response.StatusCode = resp.StatusCode;
                     context.Response.Close();
@@ -65,8 +61,6 @@ namespace Lava.Net
                     try
                     {
                         webSocketContext = await context.AcceptWebSocketAsync(null);
-                        Interlocked.Increment(ref count);
-                        Console.WriteLine("Processed: {0}", count);
                     }
                     catch (Exception e)
                     {
@@ -84,9 +78,8 @@ namespace Lava.Net
             }
         }
 
-        private async Task<(ReadOnlyMemory<byte> Response, int StatusCode)> LoadTracks(NameValueCollection query)
+        private async Task<(ReadOnlyMemory<byte> Response, int StatusCode)> LoadTracks(string identifier)
         {
-            string identifier = query.Get("identifier");
             if (identifier == null)
             {
                 return (Encoding.UTF8.GetBytes("No identifier"), 400);
@@ -94,10 +87,11 @@ namespace Lava.Net
             
             if (identifier.StartsWith("ytsearch:"))
             {
+                var result = await Youtube.Search(identifier.Substring(9));
                 return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
                 {
-                    loadType = LoadTracksResp.LoadType.SEARCH_RESULT,
-                    tracks = (await Youtube.Search(identifier.Substring(9))).Select(track => new LoadTracksResp.TrackObj() { info = track }).ToArray()
+                    loadType = result.Length == 0 ? LoadTracksResp.LoadType.NO_MATCHES : LoadTracksResp.LoadType.SEARCH_RESULT,
+                    tracks = result.Select(track => new LoadTracksResp.TrackObj() { info = track }).ToArray()
                 })), 200);
             }
 
@@ -112,12 +106,17 @@ namespace Lava.Net
 
             public struct PlaylistInfo
             {
-
+                public string name;
+                public int selectedTrack;
             }
 
             public enum LoadType
             {
-                SEARCH_RESULT
+                TRACK_LOADED,
+                PLAYLIST_LOADED,
+                SEARCH_RESULT,
+                NO_MATCHES,
+                LOAD_FAILED
             }
 
             public struct TrackObj

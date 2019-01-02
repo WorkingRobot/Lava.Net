@@ -1,0 +1,15 @@
+{
+    "server/port": 2333,
+    "server/address": "127.0.0.1",
+    "server/password": "despacito",
+    "sources":{
+        "youtube": true,
+        "bandcamp": true,
+        "soundcloud": true,
+        "twitch": true,
+        "vimeo": true,
+        "mixer": true,
+        "http": true,
+        "local": false
+    }
+}

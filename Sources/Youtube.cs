@@ -1,9 +1,15 @@
 ﻿using HtmlAgilityPack;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace Lava.Net.Sources
 {
@@ -54,6 +60,219 @@ namespace Lava.Net.Sources
                     tracks.Add(track);
             }
             return tracks.ToArray();
+        }
+
+        public static async Task<LavaTrack> GetTrack(string identifier)
+        {
+            var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
+            return new LavaTrack()
+            {
+                Author = json["args"]["author"].ToString(),
+                Identifier = identifier,
+                Length = json["args"]["length_seconds"].ToObject<int>(),
+                Seekable = true,
+                Stream = json["args"].Value<int>("livestream") == 1,
+                Title = json["args"]["title"].ToString(),
+                Uri = "https://www.youtube.com/watch?v=" + identifier
+            };
+        }
+        
+        public static Task<string> GetStream(LavaTrack track) => GetStream(track.Identifier);
+
+        static Dictionary<string, string> CachedPlayers = new Dictionary<string, string>();
+        public static async Task<string> GetStream(string identifier)
+        {
+            var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
+            if (!CachedPlayers.TryGetValue(json["assets"]["js"].ToString(), out string player_js)) // Used to decipher encrypted signatures
+            {
+                player_js = CachedPlayers[json["assets"]["js"].ToString()] = await Client.GetStringAsync("https://www.youtube.com" + json["assets"]["js"].ToString());
+            }
+
+            var fmts = json["args"]["adaptive_fmts"].ToString().Split(",") // Get formats and split by the delimiter
+                .Select(format => format.Split("&").ToDictionary(param => param.Split("=", 2)[0], param => param.Split("=", 2)[1])); // Convert the query to a dictionary
+            Console.WriteLine(fmts.Count() + " formats");
+            fmts = fmts.Where(format => format["type"].StartsWith("audio")); // Only look at audio streams
+            if (fmts.Count() == 0)
+            {
+                throw new NotImplementedException("No audio formats.");
+            }
+            Console.WriteLine(fmts.Count() + " audio formats: "+string.Join(", ", fmts.Select(form=>HttpUtility.UrlDecode(form["type"]))));
+            fmts = fmts.Where(format => format["type"].Contains("opus")); // Only look at opus streams
+            if (fmts.Count() == 0)
+            {
+                throw new NotImplementedException("No opus formats.");
+            }
+            Console.WriteLine(fmts.Count() + " opus formats");
+            var fmt = fmts.MinBy(format => int.Parse(format["bitrate"])); // Get the one with the lowest bitrate
+
+            StringBuilder url = new StringBuilder(HttpUtility.UrlDecode(fmt["url"]));
+            url.Append("&signature=");
+            if (fmt.ContainsKey("sig")) // Unencrypted signature
+            {
+                url.Append(fmt["sig"]);
+            }
+            else
+            {
+                url.Append(DecryptSignature(fmt["s"], player_js));
+            }
+            if (!fmt["url"].Contains("ratebypass")) // Add if doesn't exist
+            {
+                url.Append("&ratebypass=yes");
+            }
+            return url.ToString();
+        }
+
+
+        private static readonly Regex DecryptionFunctionRegex = new Regex(@"\bc\s*&&\s*d\.set\([^,]+\s*,\s*\([^)]*\)\s*\(\s*([a-zA-Z0-9$]+)\(");
+        private static readonly Regex FunctionRegex = new Regex(@"\w+(?:.|\[)(\""?\w+(?:\"")?)\]?\(");
+
+        private static string DecryptSignature(string signature, string js)
+        {
+            var functionLines = GetDecryptionFunctionLines(js);
+
+            var decryptor = new Decryptor();
+            foreach (var functionLine in functionLines)
+            {
+                if (decryptor.IsComplete)
+                {
+                    break;
+                }
+
+                var match = FunctionRegex.Match(functionLine);
+                if (match.Success)
+                {
+                    decryptor.AddFunction(js, match.Groups[1].Value);
+                }
+            }
+
+            foreach (var functionLine in functionLines)
+            {
+                var match = FunctionRegex.Match(functionLine);
+                if (match.Success)
+                {
+                    signature = decryptor.ExecuteFunction(signature, functionLine, match.Groups[1].Value);
+                }
+            }
+
+            return signature;
+        }
+
+        private static string[] GetDecryptionFunctionLines(string js)
+        {
+            var decryptionFunction = GetDecryptionFunction(js);
+            var match =
+                Regex.Match(
+                    js,
+                    $@"(?!h\.){Regex.Escape(decryptionFunction)}=function\(\w+\)\{{(.*?)\}}",
+                    RegexOptions.Singleline);
+            if (!match.Success)
+            {
+                throw new Exception($"{nameof(GetDecryptionFunctionLines)} failed");
+            }
+
+            return match.Groups[1].Value.Split(';');
+        }
+
+        private static string GetDecryptionFunction(string js)
+        {
+            var match = DecryptionFunctionRegex.Match(js);
+            if (!match.Success)
+            {
+                throw new Exception($"{nameof(GetDecryptionFunction)} failed");
+            }
+
+            return match.Groups[1].Value;
+        }
+
+        private class Decryptor
+        {
+            private static readonly Regex ParametersRegex = new Regex(@"\(\w+,(\d+)\)");
+
+            private readonly Dictionary<string, FunctionType> _functionTypes = new Dictionary<string, FunctionType>();
+            private readonly StringBuilder _stringBuilder = new StringBuilder();
+
+            public bool IsComplete =>
+                _functionTypes.Count == Enum.GetValues(typeof(FunctionType)).Length;
+
+            public void AddFunction(string js, string function)
+            {
+                var escapedFunction = Regex.Escape(function);
+                FunctionType? type = null;
+                if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\(\w+\)"))
+                {
+                    type = FunctionType.Reverse;
+                }
+                else if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\([a],b\).(\breturn\b)?.?\w+\."))
+                {
+                    type = FunctionType.Slice;
+                }
+                else if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\(\w+\,\w\).\bvar\b.\bc=a\b"))
+                {
+                    type = FunctionType.Swap;
+                }
+
+                if (type.HasValue)
+                {
+                    _functionTypes[function] = type.Value;
+                }
+            }
+
+            public string ExecuteFunction(string signature, string line, string function)
+            {
+                if (!_functionTypes.TryGetValue(function, out var type))
+                {
+                    return signature;
+                }
+
+                switch (type)
+                {
+                    case FunctionType.Reverse:
+                        return Reverse(signature);
+                    case FunctionType.Slice:
+                    case FunctionType.Swap:
+                        var index =
+                            int.Parse(
+                                ParametersRegex.Match(line).Groups[1].Value,
+                                NumberStyles.AllowThousands,
+                                NumberFormatInfo.InvariantInfo);
+                        return
+                            type == FunctionType.Slice
+                                ? Slice(signature, index)
+                                : Swap(signature, index);
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(type));
+                }
+            }
+
+            private string Reverse(string signature)
+            {
+                _stringBuilder.Clear();
+                for (var index = signature.Length - 1; index >= 0; index--)
+                {
+                    _stringBuilder.Append(signature[index]);
+                }
+
+                return _stringBuilder.ToString();
+            }
+
+            private string Slice(string signature, int index) =>
+                signature.Substring(index);
+
+            private string Swap(string signature, int index)
+            {
+                _stringBuilder.Clear();
+                _stringBuilder.Append(signature);
+                _stringBuilder[0] = signature[index];
+                _stringBuilder[index] = signature[0];
+                return _stringBuilder.ToString();
+            }
+
+            private enum FunctionType
+            {
+                Reverse,
+                Slice,
+                Swap
+            }
         }
     }
 }

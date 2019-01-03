@@ -1,4 +1,6 @@
-﻿using System.Threading.Tasks;
+using Lava.Net.Sources;
+using System;
+using System.Threading.Tasks;
 
 namespace Lava.Net
 {
@@ -10,7 +12,6 @@ namespace Lava.Net
 
         public Core()
         {
-            //Console.WriteLine(string.Join("\n\n\n\n",Youtube.Search("fortnite stream").GetAwaiter().GetResult().Select(t=>JsonConvert.SerializeObject(t))));
             SocketServer = new LavaSocketServer("http://"+LavaConfig.SERVER_URI+"/");
         }
 

@@ -15,9 +15,9 @@ namespace Lava.Net
         public readonly ulong UserId;
         public SortedDictionary<ulong, LavaGuildConnection> Connections = new SortedDictionary<ulong, LavaGuildConnection>();
 
-        public LavaSocketConnection(WebSocket context, int shardCount, ulong userId)
+        public LavaSocketConnection(WebSocket socket, int shardCount, ulong userId)
         {
-            Socket = context;
+            Socket = socket;
             ShardCount = shardCount;
             UserId = userId;
         }
@@ -40,10 +40,9 @@ namespace Lava.Net
                             Console.WriteLine("Recieved binary input: " + Encoding.UTF8.GetString(buffer));
                             break;
                         case WebSocketMessageType.Text:
-                            Console.WriteLine(Encoding.UTF8.GetString(buffer));
                             JObject obj = JObject.Parse(Encoding.UTF8.GetString(buffer));
                             ulong guildId = obj["guildId"].ToObject<ulong>();
-                            GetConnection(guildId).Message(obj);
+                            var _ = GetConnection(guildId).Message(obj);
                             break;
                     }
 

@@ -4,7 +4,7 @@ namespace Lava.Net
 {
     public class LavaTrack
     {
-        //public string Track; encoded thing
+        //public string Track; Lavalink uses this internally.
 
         [JsonProperty("identifier")]
         public string Identifier;

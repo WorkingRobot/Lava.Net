@@ -1,5 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Lava.Net
 {
@@ -20,7 +24,7 @@ namespace Lava.Net
             {
                 if (!sourceIterator.MoveNext())
                 {
-                    return default(TSource);
+                    return default;
                 }
                 var min = sourceIterator.Current;
                 var minKey = selector(min);
@@ -35,6 +39,41 @@ namespace Lava.Net
                     }
                 }
                 return min;
+            }
+        }
+        /*
+        private static HttpClient Client = new HttpClient();
+        public static async Task<Stream> GetStream(string url)
+        {
+            using (var response = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+            {
+                if (response.IsSuccessStatusCode)
+                {
+                    using (var stream = response.Content.ReadAsStreamAsync())
+                    {
+                        return await stream;
+                    }
+                }
+                else
+                {
+                    throw new HttpRequestException($"Response was not a success status code. ({(int)response.StatusCode})");
+                }
+            }
+        }*/
+        private static HttpClient Client = new HttpClient() { Timeout = Timeout.InfiniteTimeSpan };
+        public static async Task<Stream> GetStream(string url)
+        {
+            try
+            {
+                
+                var response = await Client.GetAsync(url,
+                    HttpCompletionOption.ResponseHeadersRead);
+                return await response.Content.ReadAsStreamAsync();
+            }
+            catch
+            {
+                Console.WriteLine("It's streaming, isn't it");
+                throw;
             }
         }
     }

@@ -1,5 +1,5 @@
 ﻿using HtmlAgilityPack;
-using Newtonsoft.Json;
+using Lava.Net.Streams;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -11,9 +11,9 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 
-namespace Lava.Net.Sources
+namespace Lava.Net.Sources.Youtube
 {
-    static class Youtube
+    internal static class Youtube
     {
         private static HttpClient Client = new HttpClient();
 
@@ -42,6 +42,7 @@ namespace Lava.Net.Sources
                     {
                         track.Identifier = desc.GetAttributeValue("href", "").Split('=')[1];
                         track.Uri = "https://www.youtube.com/watch?v=" + track.Identifier;
+                        track.Track = "yt:" + track.Identifier;
                         track.Title = desc.GetAttributeValue("title", "");
                     }
                     else if (desc.Name == "span" && desc.GetAttributeValue("class","") == "accessible-description") // span tag that contains the duration of the video
@@ -77,10 +78,10 @@ namespace Lava.Net.Sources
             };
         }
         
-        public static Task<string> GetStream(LavaTrack track) => GetStream(track.Identifier);
+        public static Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);
 
         static Dictionary<string, string> CachedPlayers = new Dictionary<string, string>();
-        public static async Task<string> GetStream(string identifier)
+        public static async Task<LavaStream> GetStream(string identifier)
         {
             var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
             if (!CachedPlayers.TryGetValue(json["assets"]["js"].ToString(), out string player_js)) // Used to decipher encrypted signatures
@@ -89,37 +90,38 @@ namespace Lava.Net.Sources
             }
 
             var fmts = json["args"]["adaptive_fmts"].ToString().Split(",") // Get formats and split by the delimiter
-                .Select(format => format.Split("&").ToDictionary(param => param.Split("=", 2)[0], param => param.Split("=", 2)[1])); // Convert the query to a dictionary
-            Console.WriteLine(fmts.Count() + " formats");
-            fmts = fmts.Where(format => format["type"].StartsWith("audio")); // Only look at audio streams
+                .Select(format => format.Split("&").ToDictionary(param => param.Split("=", 2)[0], param => param.Split("=", 2)[1])) // Convert the query to a dictionary
+                .Select(format => new StreamInfo(format["type"], format["url"], uint.Parse(format["bitrate"]), format.ContainsKey("s") ? format["s"] : format.GetValueOrDefault("sig"), format.ContainsKey("s"))); // Convert the format to a better form
+            fmts = fmts.Where(format => format.Type.ToString().Contains("AUDIO")); // Only look at audio streams
             if (fmts.Count() == 0)
             {
                 throw new NotImplementedException("No audio formats.");
             }
-            Console.WriteLine(fmts.Count() + " audio formats: "+string.Join(", ", fmts.Select(form=>HttpUtility.UrlDecode(form["type"]))));
-            fmts = fmts.Where(format => format["type"].Contains("opus")); // Only look at opus streams
+            Console.WriteLine(fmts.Count() + " audio formats");
+            //fmts = fmts.Where(format => format.Codec == StreamCodec.OPUS); // Only look at opus streams
             if (fmts.Count() == 0)
             {
                 throw new NotImplementedException("No opus formats.");
             }
             Console.WriteLine(fmts.Count() + " opus formats");
-            var fmt = fmts.MinBy(format => int.Parse(format["bitrate"])); // Get the one with the lowest bitrate
+            var fmt = fmts.MinBy(format => format.Bitrate); // Get the one with the lowest bitrate
 
-            StringBuilder url = new StringBuilder(HttpUtility.UrlDecode(fmt["url"]));
-            url.Append("&signature=");
-            if (fmt.ContainsKey("sig")) // Unencrypted signature
+            StringBuilder url = new StringBuilder(HttpUtility.UrlDecode(fmt.Url));
+            if (!string.IsNullOrWhiteSpace(fmt.Signature)) // Unencrypted signature
             {
-                url.Append(fmt["sig"]);
+                url.Append("&signature=");
+                if (fmt.SignatureEncrypted)
+                {
+                    url.Append(DecryptSignature(fmt.Signature, player_js));
+                }
+                else
+                    url.Append(fmt.Signature);
             }
-            else
-            {
-                url.Append(DecryptSignature(fmt["s"], player_js));
-            }
-            if (!fmt["url"].Contains("ratebypass")) // Add if doesn't exist
+            if (!fmt.Url.Contains("ratebypass")) // Add if doesn't exist
             {
                 url.Append("&ratebypass=yes");
             }
-            return url.ToString();
+            return new LavaStream(await Utils.GetStream(url.ToString()));
         }
 
 

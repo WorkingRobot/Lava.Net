@@ -66,7 +66,7 @@ namespace Lava.Net
             {
                 return ret;
             }
-            return Connections[guildId] = new LavaGuildConnection(guildId);
+            return Connections[guildId] = new LavaGuildConnection(guildId, UserId);
         }
     }
 }

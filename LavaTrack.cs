@@ -4,7 +4,8 @@ namespace Lava.Net
 {
     public class LavaTrack
     {
-        //public string Track; Lavalink uses this internally.
+        [JsonIgnore]
+        public string Track; // Lavalink uses this internally. I use it differently.
 
         [JsonProperty("identifier")]
         public string Identifier;

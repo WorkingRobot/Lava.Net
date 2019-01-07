@@ -1,4 +1,4 @@
-﻿using Lava.Net.Sources;
+﻿using Lava.Net.Sources.Youtube;
 using Newtonsoft.Json;
 using System;
 using System.Linq;
@@ -91,7 +91,7 @@ namespace Lava.Net
                 return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
                 {
                     loadType = result.Length == 0 ? LoadTracksResp.LoadType.NO_MATCHES : LoadTracksResp.LoadType.SEARCH_RESULT,
-                    tracks = result.Select(track => new LoadTracksResp.TrackObj() { info = track }).ToArray()
+                    tracks = result.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
                 })), 200);
             }
 

@@ -1,4 +1,4 @@
-using Lava.Net.Sources;
+using Lava.Net.Sources.Youtube;
 using System;
 using System.Threading.Tasks;
 
@@ -12,6 +12,8 @@ namespace Lava.Net
 
         public Core()
         {
+            Console.Title = "Lava.Net v0.1";
+            //Console.WriteLine(Youtube.GetStream("D7dlT6VRsdw").GetAwaiter().GetResult());
             SocketServer = new LavaSocketServer("http://"+LavaConfig.SERVER_URI+"/");
         }
 

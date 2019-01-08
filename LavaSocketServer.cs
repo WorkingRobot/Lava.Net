@@ -1,5 +1,6 @@
 ﻿using Lava.Net.Sources.Youtube;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using System;
 using System.Linq;
 using System.Net;
@@ -40,11 +41,12 @@ namespace Lava.Net
                 context.Response.Close();
                 return;
             }
-
+            Console.WriteLine("Recieved " + context.Request.Url.LocalPath);
             switch (context.Request.Url.LocalPath)
             {
                 case "/loadtracks":
                     var resp = await LoadTracks(context.Request.QueryString.Get("identifier"));
+                    Console.WriteLine(Encoding.UTF8.GetString(resp.Response.ToArray()));
                     await context.Response.OutputStream.WriteAsync(resp.Response);
                     context.Response.StatusCode = resp.StatusCode;
                     context.Response.Close();
@@ -77,7 +79,25 @@ namespace Lava.Net
                     return;
             }
         }
-
+        /*
+{
+	"playlistInfo": {},
+	"loadType": "TRACK_LOADED",
+	"tracks": [{
+		"track": "QAAAeAIAEzEgc2Vjb25kIGxvbmcgdmlkZW8AC3BoYXRyb2JzaG93AAAAAAAAA+gAC09tUDFpWmwxZ0g4AAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9T21QMWlabDFnSDgAB3lvdXR1YmUAAAAAAAAAAA==",
+		"info": {
+			"identifier": "OmP1iZl1gH8",
+			"isSeekable": true,
+			"author": "phatrobshow",
+			"length": 1000,
+			"isStream": false,
+			"position": 0,
+			"title": "1 second long video",
+			"uri": "https://www.youtube.com/watch?v=OmP1iZl1gH8"
+		}
+	}]
+}
+*/
         private async Task<(ReadOnlyMemory<byte> Response, int StatusCode)> LoadTracks(string identifier)
         {
             if (identifier == null)
@@ -94,6 +114,15 @@ namespace Lava.Net
                     tracks = result.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
                 })), 200);
             }
+            else
+            {
+                var track = await Youtube.GetTrack(identifier);
+                return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
+                {
+                    loadType = track == default ? LoadTracksResp.LoadType.NO_MATCHES : LoadTracksResp.LoadType.TRACK_LOADED,
+                    tracks = new LoadTracksResp.TrackObj[] { new LoadTracksResp.TrackObj() { track = track.Track, info = track } }
+                })), 200);
+            }
 
             return (new ReadOnlyMemory<byte>(), 500);
         }
@@ -101,12 +130,15 @@ namespace Lava.Net
         struct LoadTracksResp
         {
             public PlaylistInfo playlistInfo;
+            [JsonConverter(typeof(StringEnumConverter))]
             public LoadType loadType;
             public TrackObj[] tracks;
 
             public struct PlaylistInfo
             {
+                [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
                 public string name;
+                [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
                 public int selectedTrack;
             }
 

@@ -53,7 +53,7 @@ namespace Lava.Net.Sources.Youtube
                         {
                             duration = duration * 60 + int.Parse(part);
                         }
-                        track.Length = duration;
+                        track.Length = duration * 1000;
                         track.Stream = false;
                     }
                 }
@@ -70,12 +70,13 @@ namespace Lava.Net.Sources.Youtube
             {
                 Author = json["args"]["author"].ToString(),
                 Identifier = identifier,
-                Length = json["args"]["length_seconds"].ToObject<int>(),
+                Length = json["args"]["length_seconds"].ToObject<int>() * 1000,
                 Seekable = true,
                 Stream = json["args"].Value<int>("livestream") == 1,
                 Title = json["args"]["title"].ToString(),
-                Uri = "https://www.youtube.com/watch?v=" + identifier
-            };
+                Uri = "https://www.youtube.com/watch?v=" + identifier,
+                Track = "yt:" + identifier
+        };
         }
         
         public static Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);

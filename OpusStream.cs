@@ -1,20 +1,17 @@
 ﻿using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Lava.Net
 {
-    class OpusStream : Stream
+    class OpusStream
     {
-        Func<byte[], int, int, uint, ushort, Task> SendOpus;
         BufferedStream Buffered;
+        CancellationTokenSource BufferedTaskToken;
         
-        public OpusStream(Func<byte[], int, int, uint, ushort, Task> sendOpus)
+        public OpusStream(Func<byte[], int, int, uint, ushort, Task> sendOpus, Func<Task> requestFrames, Func<bool, Task> setSpeaking)
         {
-            SendOpus = sendOpus;
-            Buffered = new BufferedStream(sendOpus);
-            Buffered.StartTask(CancellationToken.None);
+            Buffered = new BufferedStream(sendOpus, requestFrames, setSpeaking);
         }
         
         private readonly byte[] _buffer = new byte[OpusEncoder.FRAME_BYTES];
@@ -22,7 +19,7 @@ namespace Lava.Net
         private ushort _seq;
         private uint _timestamp;
 
-        public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancelToken)
+        public void Write(byte[] buffer, int offset, int count)
         {
             //Assume thread-safe
             while (count > 0)
@@ -62,39 +59,15 @@ namespace Lava.Net
             }
         }
 
-        public override bool CanRead => false;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => true;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-
-        public override void Flush()
+        public void StartStream()
         {
-            throw new NotSupportedException();
+            BufferedTaskToken = new CancellationTokenSource();
+            Buffered.StartTask(BufferedTaskToken.Token);
         }
 
-        public override int Read(byte[] buffer, int offset, int count)
+        public void StopStream()
         {
-            throw new NotSupportedException();
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void SetLength(long value)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            throw new NotImplementedException();
+            BufferedTaskToken.Cancel();
         }
     }
 }

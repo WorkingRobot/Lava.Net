@@ -70,9 +70,9 @@ namespace Lava.Net
                     HttpCompletionOption.ResponseHeadersRead);
                 return await response.Content.ReadAsStreamAsync();
             }
-            catch
+            catch (Exception e)
             {
-                Console.WriteLine("It's streaming, isn't it");
+                Console.WriteLine("Exception: "+e.ToString());
                 throw;
             }
         }

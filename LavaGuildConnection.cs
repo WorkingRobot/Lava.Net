@@ -12,8 +12,8 @@ namespace Lava.Net
     {
         ClientWebSocket webSocket;
         AudioConnection audioConnection;
+        OpusStream OpusStream;
         LavaStream Stream;
-        Task StreamingTask;
 
         public readonly ulong GuildId;
         public readonly ulong UserId;
@@ -26,19 +26,19 @@ namespace Lava.Net
 
         public async Task Play(string track, long startTime = 0, long endTime = -1)
         {
-            Console.WriteLine("Recieved Play");
             if (track.StartsWith("yt:"))
             {
                 Stream = await Youtube.GetStream(track.Substring(3));
             }
-            await audioConnection.SetSpeakingAsync(true);
-            Console.WriteLine("Speaking set");
-            StreamingTask = CreateStreamingTask();
+            else
+            {
+                Console.WriteLine("Unknown track: " + track);
+            }
+            CreateStream();
         }
 
         public async Task VoiceUpdate(string sessionId, string endpoint, string token)
         {
-            Console.WriteLine("Recieved Voice Update");
             if (webSocket != null)
             {
                 if (webSocket.State != WebSocketState.None && webSocket.State != WebSocketState.Closed)
@@ -51,34 +51,26 @@ namespace Lava.Net
             }
 
             webSocket = new ClientWebSocket();
-            //webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
-            Console.WriteLine("Connecting! "+webSocket.Options.KeepAliveInterval.TotalMilliseconds);
             try
             {
-                Console.WriteLine("Connecting to " + $"wss://{endpoint}/?v=4");
-                await webSocket.ConnectAsync(new Uri($"wss://{endpoint}/?v=4"), CancellationToken.None);
+                await webSocket.ConnectAsync(new Uri($"wss://{endpoint}/?v=3"), CancellationToken.None);
             }
             catch (Exception e)
             {
                 Console.WriteLine(e.ToString());
                 return;
             }
-            Console.WriteLine("Connected!");
             audioConnection = new AudioConnection(webSocket);
-            Console.WriteLine("Voice Connecting!");
             await audioConnection.Connect(GuildId, UserId, sessionId, token);
-            Console.WriteLine("Voice Connected!");
         }
 
         public async Task Message(JObject packet)
         {
-            Console.WriteLine($"Guild {GuildId} update with: " + packet.ToString());
             switch (packet["op"].ToString())
             {
                 case "voiceUpdate":
                     if (string.IsNullOrEmpty(packet["event"].Value<string>("endpoint")))
                         return;
-                    Console.WriteLine(packet.ToString());
                     await VoiceUpdate(packet.Value<string>("sessionId"), packet["event"].Value<string>("endpoint"), packet["event"].Value<string>("token"));
                     break;
                 case "play":
@@ -89,28 +81,35 @@ namespace Lava.Net
                     return;
             }
         }
-
-        public async Task CreateStreamingTask()
+        // {"playlistInfo":{"name":null,"selectedTrack":0},"loadType":3,"tracks":[{"track":null,"info":{"identifier":"OmP1iZl1gH8","isSeekable":true,"author":"phatrobshow","length":1,"isStream":false,"position":0,"title":"1 second long video","uri":"https://www.youtube.com/watch?v=OmP1iZl1gH8"}}]}
+        // {"playlistInfo":{},"loadType":"TRACK_LOADED","tracks":[{"track":"QAAAeAIAEzEgc2Vjb25kIGxvbmcgdmlkZW8AC3BoYXRyb2JzaG93AAAAAAAAA+gAC09tUDFpWmwxZ0g4AAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9T21QMWlabDFnSDgAB3lvdXR1YmUAAAAAAAAAAA==","info":{"identifier":"OmP1iZl1gH8","isSeekable":true,"author":"phatrobshow","length":1000,"isStream":false,"position":0,"title":"1 second long video","uri":"https://www.youtube.com/watch?v=OmP1iZl1gH8"}}]}
+        public void CreateStream()
         {
-            Console.WriteLine("Streaming started");
+            if (!audioConnection.Ready)
+                SpinWait.SpinUntil(() => audioConnection.Ready);
             byte[] buffer = new byte[OpusEncoder.FRAME_BYTES];
-            OpusStream opusStream = new OpusStream(audioConnection.SendOpusAsync);
-            Console.WriteLine("buffer size: "+buffer.Length);
-            try
+            int read;
+            OpusStream = new OpusStream(audioConnection.SendOpusAsync, ()=>
             {
-                int read;
-                while ((read = Stream.Decoder.Read(buffer, 0, buffer.Length)) > 0)
+                try
                 {
-                    Console.WriteLine(Stream.Decoder.WaveFormat.BytesToMilliseconds(Stream.Decoder.Position)/1000f);
-                    await opusStream.WriteAsync(buffer, 0, OpusEncoder.FRAME_BYTES, CancellationToken.None);
-                    await Task.Delay(5);
+                    if ((read = Stream.Decoder.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        Console.WriteLine("len: " + Stream.OldDecoder.WaveFormat.BytesToMilliseconds(Stream.OldDecoder.Position)/1000f);
+                        OpusStream.Write(buffer, 0, read);
+                    }
+                    else
+                    {
+                        OpusStream.StopStream();
+                    }
                 }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Heartbeat Exception: {0}", e);
-            }
-            Console.WriteLine("finished");
+                catch(Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                }
+                return Task.CompletedTask;
+            }, audioConnection.SetSpeakingAsync);
+            OpusStream.StartStream();
         }
     }
 }

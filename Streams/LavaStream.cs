@@ -8,17 +8,15 @@ namespace Lava.Net.Streams
     class LavaStream : Stream
     {
         public IWaveSource Decoder;
+        public IWaveSource OldDecoder;
         public LavaStream(Stream stream)
         {
             try
             {
-                Decoder = new FfmpegDecoder(stream);
-                Decoder = Decoder.ToSampleSource().ChangeSampleRate(48000).ToWaveSource(16);
-
-                using (var f = File.OpenWrite(@"C:\Users\Aleks\Desktop\lol.wav"))
-                {
-                    Decoder.WriteToWaveStream(f);
-                }
+                OldDecoder = Decoder = new FfmpegDecoder(stream);
+                Console.WriteLine($"Original: {Decoder.WaveFormat.SampleRate} {Decoder.WaveFormat.BitsPerSample}");
+                Decoder = new LavaSampleToPcm16(Decoder.ChangeSampleRate(48000).ToSampleSource());
+                Console.WriteLine(Decoder.WaveFormat.WaveFormatTag);
             }
             catch (Exception e)
             {

@@ -9,7 +9,7 @@ namespace Lava.Net
         const int CHANNELS = 2;
         internal const int FRAME_MILLIS = 20;
         const int SAMPLE_BYTES = sizeof(short) * CHANNELS;
-        const int BITRATE = 96*1024;
+        const int BITRATE = 128*1024;
         internal const int FRAME_SAMPLES_PER_CHANNEL = SAMPLING_RATE / 1000 * FRAME_MILLIS;
         internal const int FRAME_BYTES = FRAME_SAMPLES_PER_CHANNEL * SAMPLE_BYTES;
 

@@ -9,15 +9,19 @@ namespace Lava.Net
     {
         const int MAX_SILENCE_FRAMES = 10;
         const int TICKS_PER_FRAME = OpusEncoder.FRAME_MILLIS;
-        static readonly byte[] SILENCE_FRAME = new byte[0];
+        static readonly byte[] SILENCE_FRAME = new byte[] { 0xF8, 0xFF, 0xFE };
         
-        Func<byte[], int, int, uint, ushort, Task> SendOpus;
+        Func<byte[], int, int, uint, ushort, Task> SendOpusAsync;
+        Func<Task> RequestFramesAsync;
+        Func<bool, Task> SetSpeakingAsync;
         Task BufferTask;
         ConcurrentQueue<byte[]> frames = new ConcurrentQueue<byte[]>();
 
-        public BufferedStream(Func<byte[], int, int, uint, ushort, Task> sendOpus)
+        public BufferedStream(Func<byte[], int, int, uint, ushort, Task> sendOpus, Func<Task> requestFrames, Func<bool, Task> setSpeaking)
         {
-            SendOpus = sendOpus;
+            SendOpusAsync = sendOpus;
+            RequestFramesAsync = requestFrames;
+            SetSpeakingAsync = setSpeaking;
         }
 
         public void RecvFrame(byte[] frame)
@@ -42,7 +46,7 @@ namespace Lava.Net
                 long nextTick = Environment.TickCount;
                 ushort seq = 0;
                 uint timestamp = 0;
-                while (!_cancelToken.IsCancellationRequested)
+                while (!_cancelToken.IsCancellationRequested || !frames.IsEmpty)
                 {
                     long tick = Environment.TickCount;
                     long dist = nextTick - tick;
@@ -50,8 +54,8 @@ namespace Lava.Net
                     {
                         if (frames.TryDequeue(out byte[] frame))
                         {
-                            //await _client.SetSpeakingAsync(true).ConfigureAwait(false);
-                            await SendOpus(frame, 0, frame.Length, timestamp, seq).ConfigureAwait(false);
+                            await SetSpeakingAsync(true).ConfigureAwait(false);
+                            await SendOpusAsync(frame, 0, frame.Length, timestamp, seq).ConfigureAwait(false);
                             nextTick += TICKS_PER_FRAME;
                             seq++;
                             timestamp += OpusEncoder.FRAME_SAMPLES_PER_CHANNEL;
@@ -64,22 +68,27 @@ namespace Lava.Net
                             {
                                 if (_silenceFrames++ < MAX_SILENCE_FRAMES)
                                 {
-                                    await SendOpus(SILENCE_FRAME, 0, SILENCE_FRAME.Length, timestamp, seq).ConfigureAwait(false);
+                                    await SendOpusAsync(SILENCE_FRAME, 0, SILENCE_FRAME.Length, timestamp, seq).ConfigureAwait(false);
                                 }
                                 else
                                 {
-                                    //await _client.SetSpeakingAsync(false).ConfigureAwait(false);
+                                    await SetSpeakingAsync(false).ConfigureAwait(false);
                                 }
                                 nextTick += TICKS_PER_FRAME;
                                 seq++;
                                 timestamp += OpusEncoder.FRAME_SAMPLES_PER_CHANNEL;
                             }
-                            Console.WriteLine("Buffer underrun");
+                        }
+                        int _retries = 0;
+                        while (frames.Count < 5 && _retries++ < 10)
+                        {
+                            await RequestFramesAsync().ConfigureAwait(false);
                         }
                     }
                     else
-                        await Task.Delay((int)(dist)/*, _cancelToken*/).ConfigureAwait(false);
+                        await Task.Delay((int)dist/*, _cancelToken*/).ConfigureAwait(false);
                 }
+                await SendOpusAsync(SILENCE_FRAME, 0, SILENCE_FRAME.Length, timestamp, seq).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
         }

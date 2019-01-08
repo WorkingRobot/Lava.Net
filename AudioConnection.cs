@@ -22,7 +22,7 @@ namespace Lava.Net
         public ushort port;
         UdpClient UdpClient;
 
-        bool Ready;
+        public bool Ready { private set; get; }
 
         CancellationTokenSource heartbeatTokenSource;
         Task heartbeatTask;
@@ -37,14 +37,12 @@ namespace Lava.Net
 
         public Task Connect(ulong guild, ulong user, string sessionId, string token)
         {
-            Console.WriteLine($"Connecting with sessionId {sessionId} and token {token}");
             recieveTask = RecieveTask();
             Console.WriteLine($"Sending IDENTIFY");
             var obj = JsonConvert.SerializeObject(
                 new VoicePayload(0,
                 new IdentifyPayload(guild, user, sessionId, token))
                 );
-            Console.WriteLine(obj);
             return Socket.SendAsync(Encoding.UTF8.GetBytes(obj), WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
@@ -61,11 +59,8 @@ namespace Lava.Net
         {
             if (!Ready)
             {
-                Console.WriteLine("Waiting until ready");
                 SpinWait.SpinUntil(() => Ready);
-                Console.WriteLine("Ready!");
             }
-            Console.WriteLine("Speaking: "+speaking);
             try
             {
                 Console.WriteLine($"Sending SPEAKING");
@@ -78,13 +73,11 @@ namespace Lava.Net
             {
                 Console.WriteLine(e.ToString());
             }
-            Console.WriteLine("Speaking set");
             return Task.CompletedTask;
         }
 
         async Task Recieve(JToken data)
         {
-            Console.WriteLine("recieved " + data.ToString());
             switch (data["op"].ToObject<int>())
             {
                 case 2: // Voice Ready
@@ -92,13 +85,11 @@ namespace Lava.Net
                     ssrc = data["d"]["ssrc"].ToObject<uint>();
                     ip = data["d"]["ip"].ToString();
                     port = data["d"]["port"].ToObject<ushort>();
-                    Console.WriteLine("Modes available: " + string.Join(", ", data["d"]["modes"].ToObject<string[]>()));
                     await Select();
                     return;
                 case 8: // Hello o/
                     Console.WriteLine($"Recieved HELLO");
                     heartbeatInterval = (int)(data["d"]["heartbeat_interval"].ToObject<int>() * 0.75f); // https://i.snag.gy/KylSGF.jpg
-                    Console.WriteLine("heartbeat interval: "+heartbeatInterval);
                     if (heartbeatTask != null)
                     {
                         heartbeatTokenSource.Cancel();
@@ -108,7 +99,6 @@ namespace Lava.Net
                     heartbeatTask = HeartbeatTask(heartbeatTokenSource.Token);
                     return;
                 case 6: // Heartbeat ACK
-                    Console.WriteLine($"Recieved HEARTBEAT ACK");
                     return;
                 case 4: // Session Description
                     Console.WriteLine($"Recieved SESSION DESC");
@@ -123,7 +113,6 @@ namespace Lava.Net
                         UdpClient = new UdpClient();
                         UdpClient.Connect(ip, port);
                         await SendUdpDiscoveryAsync(ssrc);
-                        Console.WriteLine("Connected to UDP.");
                     }
                     catch (Exception e)
                     {
@@ -180,7 +169,6 @@ namespace Lava.Net
                 while (!token.IsCancellationRequested)
                 {
                     await Task.Delay(heartbeatInterval, token);
-                    Console.WriteLine($"Sending HEARTBEAT");
                     await Socket.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(
                        new VoicePayload(3, DateTimeOffset.UtcNow.ToUnixTimeSeconds())
                        )), WebSocketMessageType.Text, true, token);
@@ -229,14 +217,11 @@ namespace Lava.Net
 
         public Task SendOpusAsync(byte[] opus, uint timestamp, ushort sequence)
         {
-            Console.WriteLine("Sending opus at " + timestamp);
             try
             {
                 if (!Ready)
                 {
-                    Console.WriteLine("Waiting until ready");
                     SpinWait.SpinUntil(() => Ready);
-                    Console.WriteLine("Ready!");
                 }
                 var nonce = RtpEncode(sequence, timestamp, ssrc);
                 var sodium = SodiumEncode(opus, nonce, secretKey);

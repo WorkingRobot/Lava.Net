@@ -1,5 +1,6 @@
-# Lava.Net
-A port of [Lavalink](https://github.com/Frederikam/Lavalink) to .NET (Core). Lava.Net is made to replace Lavalink (as a substitute). Any existing Lavalink library will work just fine when using Lava.Net.
+# Lava.Net [![Build status](https://ci.appveyor.com/api/projects/status/q3v8ygegrjdx0fb7?svg=true)](https://ci.appveyor.com/project/WorkingRobot/lava-net)
+
+Lava.Net is a (.NET Core 2.0) drop-in replacement for [Lavalink](https://github.com/Frederikam/Lavalink), supporting the full API set. Any existing Lavalink-compatible library will work perfectly with Lava.Net.
 
 To Do:
  - [x] Make a REST and WebSocket connection available

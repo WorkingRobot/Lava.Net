@@ -4,6 +4,9 @@ using System;
 
 namespace Lava.Net.Streams
 {
+    /// <summary>
+    /// Identical to <see cref="SampleToPcm16"/>, but the volume is slightly lowered due to the amount of peaking.
+    /// </summary>
     public class LavaSampleToPcm16 : SampleToPcm16
     {
         public LavaSampleToPcm16(ISampleSource source) : base(source) { }

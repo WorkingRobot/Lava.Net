@@ -13,10 +13,9 @@ namespace Lava.Net.Streams
         {
             try
             {
-                OldDecoder = Decoder = new FfmpegDecoder(stream);
-                Console.WriteLine($"Original: {Decoder.WaveFormat.SampleRate} {Decoder.WaveFormat.BitsPerSample}");
-                Decoder = new LavaSampleToPcm16(Decoder.ChangeSampleRate(48000).ToSampleSource());
-                Console.WriteLine(Decoder.WaveFormat.WaveFormatTag);
+                OldDecoder = Decoder = new FfmpegDecoder(stream).ChangeSampleRate(48000);
+                if (Decoder.WaveFormat.BitsPerSample != 16 || Decoder.WaveFormat.WaveFormatTag != AudioEncoding.Pcm)
+                    Decoder = new LavaSampleToPcm16(Decoder.ToSampleSource());
             }
             catch (Exception e)
             {

@@ -3,48 +3,61 @@ using System.IO;
 
 namespace Lava.Net
 {
+    /// <summary>
+    /// Configuration class for Lava.Net. Reads values from config.json when initialized.
+    /// </summary>
     public sealed class LavaConfig
     {
         static LavaConfig()
         {
-            JsonConvert.DeserializeObject<LavaConfig>(File.ReadAllText("../../../config.json"));
+            JsonConvert.DeserializeObject<LavaConfig>(File.ReadAllText("config.json"));
         }
-
-        public static string SERVER_URI => $"{SERVER_ADDRESS}:{SERVER_PORT}";
-
-        // SERVER
-        [JsonProperty("server/port")]
-        public static readonly ushort SERVER_PORT;
-
-        [JsonProperty("server/address")]
-        public static readonly string SERVER_ADDRESS;
         
-        [JsonProperty("server/password")]
-        public static readonly string SERVER_AUTH;
+        [JsonProperty("server")]
+        public static readonly ServerConfig Server;
 
-        // SOURCES
-        [JsonProperty("sources/youtube")]
-        public static readonly bool SOURCES_YOUTUBE;
+        public struct ServerConfig
+        {
+            public string Uri => $"{Server.Address}:{Server.Port}";
 
-        [JsonProperty("sources/bandcamp")]
-        public static readonly bool SOURCES_BANDCAMP;
+            [JsonProperty("port")]
+            public readonly ushort Port;
 
-        [JsonProperty("sources/soundcloud")]
-        public static readonly bool SOURCES_SOUNDCLOUD;
+            [JsonProperty("address")]
+            public readonly string Address;
 
-        [JsonProperty("sources/twitch")]
-        public static readonly bool SOURCES_TWITCH;
+            [JsonProperty("password")]
+            public readonly string Authorization;
+        }
+        
+        [JsonProperty("sources")]
+        public static readonly SourcesConfig Sources;
 
-        [JsonProperty("sources/vimeo")]
-        public static readonly bool SOURCES_VIMEO;
+        public struct SourcesConfig
+        {
+            [JsonProperty("youtube")]
+            public readonly bool Youtube;
 
-        [JsonProperty("sources/mixer")]
-        public static readonly bool SOURCES_MIXER;
+            [JsonProperty("bandcamp")]
+            public readonly bool Bandcamp;
 
-        [JsonProperty("sources/http")]
-        public static readonly bool SOURCES_HTTP;
+            [JsonProperty("soundcloud")]
+            public readonly bool Soundcloud;
 
-        [JsonProperty("sources/local")]
-        public static readonly bool SOURCES_LOCAL;
+            [JsonProperty("twitch")]
+            public readonly bool Twitch;
+
+            [JsonProperty("vimeo")]
+            public readonly bool Vimeo;
+
+            [JsonProperty("mixer")]
+            public readonly bool Mixer;
+
+            [JsonProperty("http")]
+            public readonly bool Http;
+
+            [JsonProperty("local")]
+            public readonly bool Local;
+        }
     }
 }

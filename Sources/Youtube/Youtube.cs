@@ -17,7 +17,7 @@ namespace Lava.Net.Sources.Youtube
     {
         private static HttpClient Client = new HttpClient();
 
-        public static async Task<LavaTrack[]> Search(string query)
+        public static async Task<(List<LavaTrack> tracks, LoadType type)> Search(string query)
         {
             List<LavaTrack> tracks = new List<LavaTrack>();
             var doc = new HtmlDocument();
@@ -60,23 +60,35 @@ namespace Lava.Net.Sources.Youtube
                 if (!string.IsNullOrWhiteSpace(track.Identifier))
                     tracks.Add(track);
             }
-            return tracks.ToArray();
+            return (tracks, tracks.Count == 0 ? LoadType.NO_MATCHES : LoadType.SEARCH_RESULT);
         }
 
-        public static async Task<LavaTrack> GetTrack(string identifier)
+        public static async Task<(LavaTrack track, LoadType type)> GetTrack(string identifier)
         {
-            var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
-            return new LavaTrack()
+            JObject json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
+            try
             {
-                Author = json["args"]["author"].ToString(),
-                Identifier = identifier,
-                Length = json["args"]["length_seconds"].ToObject<int>() * 1000,
-                Seekable = true,
-                Stream = json["args"].Value<int>("livestream") == 1,
-                Title = json["args"]["title"].ToString(),
-                Uri = "https://www.youtube.com/watch?v=" + identifier,
-                Track = "yt:" + identifier
-        };
+                return (new LavaTrack()
+                {
+                    Author = json["args"]["author"].ToString(),
+                    Identifier = identifier,
+                    Length = json["args"]["length_seconds"].ToObject<int>() * 1000,
+                    Seekable = true,
+                    Stream = json["args"].Value<int>("livestream") == 1,
+                    Title = json["args"]["title"].ToString(),
+                    Uri = "https://www.youtube.com/watch?v=" + identifier,
+                    Track = "yt:" + identifier
+                }, LoadType.TRACK_LOADED);
+            }
+            catch (NullReferenceException)
+            {
+                return (null, LoadType.NO_MATCHES);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+                return (null, LoadType.LOAD_FAILED);
+            }
         }
         
         public static Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);

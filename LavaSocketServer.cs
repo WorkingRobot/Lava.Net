@@ -35,7 +35,7 @@ namespace Lava.Net
 
         private async Task ProcessRequest(HttpListenerContext context)
         {
-            if (context.Request.Headers.Get("Host") != LavaConfig.SERVER_URI || context.Request.Headers.Get("Authorization") != LavaConfig.SERVER_AUTH)
+            if (context.Request.Headers.Get("Authorization") != LavaConfig.Server.Authorization)
             {
                 context.Response.StatusCode = 403;
                 context.Response.Close();
@@ -110,17 +110,26 @@ namespace Lava.Net
                 var result = await Youtube.Search(identifier.Substring(9));
                 return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
                 {
-                    loadType = result.Length == 0 ? LoadTracksResp.LoadType.NO_MATCHES : LoadTracksResp.LoadType.SEARCH_RESULT,
-                    tracks = result.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
+                    loadType = result.type,
+                    tracks = result.tracks.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
                 })), 200);
             }
             else
             {
-                var track = await Youtube.GetTrack(identifier);
+                var result = await Youtube.GetTrack(identifier);
+                LoadTracksResp.TrackObj[] tracks;
+                if (result.track == null)
+                {
+                    tracks = new LoadTracksResp.TrackObj[0];
+                }
+                else
+                {
+                    tracks = new LoadTracksResp.TrackObj[] { new LoadTracksResp.TrackObj() { track = result.track.Track, info = result.track } };
+                }
                 return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
                 {
-                    loadType = track == default ? LoadTracksResp.LoadType.NO_MATCHES : LoadTracksResp.LoadType.TRACK_LOADED,
-                    tracks = new LoadTracksResp.TrackObj[] { new LoadTracksResp.TrackObj() { track = track.Track, info = track } }
+                    loadType = result.type,
+                    tracks = tracks
                 })), 200);
             }
 
@@ -142,20 +151,20 @@ namespace Lava.Net
                 public int selectedTrack;
             }
 
-            public enum LoadType
-            {
-                TRACK_LOADED,
-                PLAYLIST_LOADED,
-                SEARCH_RESULT,
-                NO_MATCHES,
-                LOAD_FAILED
-            }
-
             public struct TrackObj
             {
                 public string track;
                 public LavaTrack info;
             }
         }
+    }
+    
+    public enum LoadType
+    {
+        TRACK_LOADED,
+        PLAYLIST_LOADED,
+        SEARCH_RESULT,
+        NO_MATCHES,
+        LOAD_FAILED
     }
 }

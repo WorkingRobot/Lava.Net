@@ -51,7 +51,7 @@ namespace Lava.Net
             }
             catch (Exception e)
             {
-                Console.WriteLine("Exception: {0}", e);
+                Console.WriteLine("Exception: " + e);
             }
             finally
             {

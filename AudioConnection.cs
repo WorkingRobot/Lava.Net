@@ -38,7 +38,6 @@ namespace Lava.Net
         public Task Connect(ulong guild, ulong user, string sessionId, string token)
         {
             recieveTask = RecieveTask();
-            Console.WriteLine($"Sending IDENTIFY");
             var obj = JsonConvert.SerializeObject(
                 new VoicePayload(0,
                 new IdentifyPayload(guild, user, sessionId, token))
@@ -48,30 +47,32 @@ namespace Lava.Net
 
         Task Select()
         {
-            Console.WriteLine($"Sending SELECT");
             return Socket.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(
                 new VoicePayload(1,
                 new SelectPayload(ip, port))
                 )), WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
+        bool Speaking = false;
         public Task SetSpeakingAsync(bool speaking)
         {
+            if (Speaking == speaking)
+                return Task.CompletedTask;
             if (!Ready)
             {
                 SpinWait.SpinUntil(() => Ready);
             }
             try
             {
-                Console.WriteLine($"Sending SPEAKING");
                 Socket.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(
                     new VoicePayload(5,
                     new SpeakingPayload(speaking, ssrc))
                     )), WebSocketMessageType.Text, true, CancellationToken.None).Wait();
+                Speaking = speaking;
             }
             catch(Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine(e);
             }
             return Task.CompletedTask;
         }
@@ -81,14 +82,12 @@ namespace Lava.Net
             switch (data["op"].ToObject<int>())
             {
                 case 2: // Voice Ready
-                    Console.WriteLine($"Recieved READY");
                     ssrc = data["d"]["ssrc"].ToObject<uint>();
                     ip = data["d"]["ip"].ToString();
                     port = data["d"]["port"].ToObject<ushort>();
                     await Select();
                     return;
                 case 8: // Hello o/
-                    Console.WriteLine($"Recieved HELLO");
                     heartbeatInterval = (int)(data["d"]["heartbeat_interval"].ToObject<int>() * 0.75f); // https://i.snag.gy/KylSGF.jpg
                     if (heartbeatTask != null)
                     {
@@ -101,7 +100,6 @@ namespace Lava.Net
                 case 6: // Heartbeat ACK
                     return;
                 case 4: // Session Description
-                    Console.WriteLine($"Recieved SESSION DESC");
                     if (data["d"]["mode"].ToString() != "xsalsa20_poly1305")
                     {
                         Console.WriteLine("Unknown mode: " + data["d"]["mode"].ToString());
@@ -116,7 +114,7 @@ namespace Lava.Net
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine(e.ToString());
+                        Console.WriteLine(e);
                     }
                     Ready = true;
                     return;
@@ -153,7 +151,7 @@ namespace Lava.Net
             }
             catch (Exception e)
             {
-                Console.WriteLine("Exception: {0}", e);
+                Console.WriteLine("Exception: " + e);
             }
             finally
             {
@@ -176,7 +174,7 @@ namespace Lava.Net
             }
             catch (Exception e)
             {
-                Console.WriteLine("Heartbeat Exception: {0}", e);
+                Console.WriteLine("Heartbeat Exception: " + e);
             }
         }
 
@@ -233,7 +231,7 @@ namespace Lava.Net
             }
             catch (Exception e)
             {
-                Console.WriteLine("Send Opus Exception: {0}", e);
+                Console.WriteLine("Send Opus Exception: " + e);
                 return Task.CompletedTask;
             }
         }

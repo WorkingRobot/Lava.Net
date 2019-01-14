@@ -1,4 +1,5 @@
-﻿using Lava.Net.Sources.Youtube;
+﻿using CSCore;
+using Lava.Net.Sources.Youtube;
 using Lava.Net.Streams;
 using Newtonsoft.Json.Linq;
 using System;
@@ -26,15 +27,35 @@ namespace Lava.Net
 
         public async Task Play(string track, long startTime = 0, long endTime = -1)
         {
-            if (track.StartsWith("yt:"))
+            try
             {
-                Stream = await Youtube.GetStream(track.Substring(3));
+                if (LavaConfig.Sources.Youtube && track.StartsWith("yt:"))
+                {
+                    Stream = await LavaSocketServer.Sources["youtube"].GetStream(track.Substring(3));
+                    if (Stream.Decoder.CanSeek)
+                    {
+                        Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(startTime));
+                    }
+                }
+                else if (LavaConfig.Sources.Soundcloud && track.StartsWith("sc:"))
+                {
+                    Stream = await LavaSocketServer.Sources["soundcloud"].GetStream(track.Substring(3));
+                    if (Stream.Decoder.CanSeek)
+                    {
+                        Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(startTime));
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Unknown track: " + track);
+                }
+                Stream.SetEndTime(endTime);
+                CreateStream();
             }
-            else
+            catch(Exception e)
             {
-                Console.WriteLine("Unknown track: " + track);
+                Console.WriteLine(e);
             }
-            CreateStream();
         }
 
         public async Task VoiceUpdate(string sessionId, string endpoint, string token)
@@ -57,7 +78,7 @@ namespace Lava.Net
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine(e);
                 return;
             }
             audioConnection = new AudioConnection(webSocket);
@@ -81,8 +102,7 @@ namespace Lava.Net
                     return;
             }
         }
-        // {"playlistInfo":{"name":null,"selectedTrack":0},"loadType":3,"tracks":[{"track":null,"info":{"identifier":"OmP1iZl1gH8","isSeekable":true,"author":"phatrobshow","length":1,"isStream":false,"position":0,"title":"1 second long video","uri":"https://www.youtube.com/watch?v=OmP1iZl1gH8"}}]}
-        // {"playlistInfo":{},"loadType":"TRACK_LOADED","tracks":[{"track":"QAAAeAIAEzEgc2Vjb25kIGxvbmcgdmlkZW8AC3BoYXRyb2JzaG93AAAAAAAAA+gAC09tUDFpWmwxZ0g4AAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9T21QMWlabDFnSDgAB3lvdXR1YmUAAAAAAAAAAA==","info":{"identifier":"OmP1iZl1gH8","isSeekable":true,"author":"phatrobshow","length":1000,"isStream":false,"position":0,"title":"1 second long video","uri":"https://www.youtube.com/watch?v=OmP1iZl1gH8"}}]}
+
         public void CreateStream()
         {
             if (!audioConnection.Ready)
@@ -93,9 +113,9 @@ namespace Lava.Net
             {
                 try
                 {
-                    if ((read = Stream.Decoder.Read(buffer, 0, buffer.Length)) > 0)
+                    if ((read = Stream.Read(buffer, 0, buffer.Length)) > 0)
                     {
-                        Console.WriteLine("len: " + Stream.OldDecoder.WaveFormat.BytesToMilliseconds(Stream.OldDecoder.Position)/1000f);
+                        //Console.WriteLine("len: " + Stream.OldDecoder.WaveFormat.BytesToMilliseconds(Stream.OldDecoder.Position)/1000f);
                         OpusStream.Write(buffer, 0, read);
                     }
                     else

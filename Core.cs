@@ -1,4 +1,3 @@
-using Lava.Net.Sources.Youtube;
 using System;
 using System.Threading.Tasks;
 
@@ -12,7 +11,7 @@ namespace Lava.Net
 
         public Core()
         {
-            Console.Title = "Lava.Net v0.1";
+            Console.Title = "Lava.Net v0.2";
             SocketServer = new LavaSocketServer("http://"+LavaConfig.Server.Uri+"/");
         }
 

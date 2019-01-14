@@ -2,6 +2,7 @@
 using CSCore.Ffmpeg;
 using System;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Lava.Net.Streams
 {
@@ -9,6 +10,8 @@ namespace Lava.Net.Streams
     {
         public IWaveSource Decoder;
         public IWaveSource OldDecoder;
+        private long EndTime = -1;
+
         public LavaStream(Stream stream)
         {
             try
@@ -19,19 +22,21 @@ namespace Lava.Net.Streams
             }
             catch (Exception e)
             {
-                Console.WriteLine("Exception: " + e.ToString());
+                Console.WriteLine("Exception: " + e);
             }
         }
 
+        public static async Task<LavaStream> FromUrl(string url) => new LavaStream(await Utils.GetStream(url));
+
         public override bool CanRead => true;
 
-        public override bool CanSeek => false;
+        public override bool CanSeek => true;
 
         public override bool CanWrite => false;
 
         public override long Length => Decoder.Length;
 
-        public override long Position { get => Decoder.Position; set => throw new InvalidOperationException("Cannot flush"); }
+        public override long Position { get => Decoder.Position; set => Decoder.Position = value; }
 
         public override void Flush()
         {
@@ -40,12 +45,23 @@ namespace Lava.Net.Streams
 
         public override int Read(byte[] buffer, int offset, int count)
         {
+            if (EndTime != -1 && Decoder.Position >= EndTime)
+                return 0;
             return Decoder.Read(buffer, offset, count);
         }
 
         public override long Seek(long offset, SeekOrigin origin)
         {
-            throw new InvalidOperationException("Cannot seek");
+            switch (origin)
+            {
+                case SeekOrigin.Begin:
+                    return Position = offset;
+                case SeekOrigin.Current:
+                    return Position += offset;
+                case SeekOrigin.End:
+                    return Position = Length - Position;
+            }
+            throw new ArgumentException("Not a valid value.", nameof(origin));
         }
 
         public override void SetLength(long value)
@@ -56,6 +72,12 @@ namespace Lava.Net.Streams
         public override void Write(byte[] buffer, int offset, int count)
         {
             throw new InvalidOperationException("Cannot write");
+        }
+
+        public void SetEndTime(long endTime)
+        {
+            if (endTime != -1)
+                EndTime = Decoder.WaveFormat.MillisecondsToBytes(endTime);
         }
     }
 }

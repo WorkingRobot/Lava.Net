@@ -60,7 +60,7 @@ namespace Lava.Net
                             seq++;
                             timestamp += OpusEncoder.FRAME_SAMPLES_PER_CHANNEL;
                             _silenceFrames = 0;
-                            Console.WriteLine($"Sent {frame.Length} bytes ({frames.Count} frames buffered)");
+                            //Console.WriteLine($"Sent {frame.Length} bytes ({frames.Count} frames buffered)");
                         }
                         else
                         {

@@ -1,7 +1,10 @@
-﻿using Lava.Net.Sources.Youtube;
+﻿using Lava.Net.Sources;
+using Lava.Net.Sources.Youtube;
+using Lava.Net.Sources.Soundcloud;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
@@ -22,9 +25,9 @@ namespace Lava.Net
         public async Task StartAsync()
         {
             HttpListener listener = new HttpListener();
+            Console.WriteLine("Listening to " + ListenerUri);
             listener.Prefixes.Add(ListenerUri);
             listener.Start();
-            Console.WriteLine("Listening...");
 
             while (true)
             {
@@ -41,12 +44,10 @@ namespace Lava.Net
                 context.Response.Close();
                 return;
             }
-            Console.WriteLine("Recieved " + context.Request.Url.LocalPath);
             switch (context.Request.Url.LocalPath)
             {
                 case "/loadtracks":
                     var resp = await LoadTracks(context.Request.QueryString.Get("identifier"));
-                    Console.WriteLine(Encoding.UTF8.GetString(resp.Response.ToArray()));
                     await context.Response.OutputStream.WriteAsync(resp.Response);
                     context.Response.StatusCode = resp.StatusCode;
                     context.Response.Close();
@@ -75,29 +76,17 @@ namespace Lava.Net
                     var _ = new LavaSocketConnection(webSocketContext.WebSocket, int.Parse(context.Request.Headers.Get("Num-Shards")), ulong.Parse(context.Request.Headers.Get("User-Id"))).HandleAsync().ConfigureAwait(false);
                     return;
                 default:
-                    Console.WriteLine("unknown: " + context.Request.Url.LocalPath);
+                    Console.WriteLine("Unknown Path Requested: " + context.Request.Url.LocalPath);
                     return;
             }
         }
-        /*
-{
-	"playlistInfo": {},
-	"loadType": "TRACK_LOADED",
-	"tracks": [{
-		"track": "QAAAeAIAEzEgc2Vjb25kIGxvbmcgdmlkZW8AC3BoYXRyb2JzaG93AAAAAAAAA+gAC09tUDFpWmwxZ0g4AAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9T21QMWlabDFnSDgAB3lvdXR1YmUAAAAAAAAAAA==",
-		"info": {
-			"identifier": "OmP1iZl1gH8",
-			"isSeekable": true,
-			"author": "phatrobshow",
-			"length": 1000,
-			"isStream": false,
-			"position": 0,
-			"title": "1 second long video",
-			"uri": "https://www.youtube.com/watch?v=OmP1iZl1gH8"
-		}
-	}]
-}
-*/
+
+        internal static SortedDictionary<string, ISource> Sources = new SortedDictionary<string, ISource>()
+        {
+            { "youtube", new Youtube() },
+            { "soundcloud", new Soundcloud() }
+        };
+
         private async Task<(ReadOnlyMemory<byte> Response, int StatusCode)> LoadTracks(string identifier)
         {
             if (identifier == null)
@@ -105,18 +94,27 @@ namespace Lava.Net
                 return (Encoding.UTF8.GetBytes("No identifier"), 400);
             }
             
-            if (identifier.StartsWith("ytsearch:"))
+            if (LavaConfig.Sources.Youtube && identifier.StartsWith("ytsearch:"))
             {
-                var result = await Youtube.Search(identifier.Substring(9));
+                var result = await Sources["youtube"].Search(identifier.Substring(9));
                 return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
                 {
                     loadType = result.type,
                     tracks = result.tracks.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
                 })), 200);
             }
-            else
+            else if (LavaConfig.Sources.Soundcloud && identifier.StartsWith("scsearch:"))
             {
-                var result = await Youtube.GetTrack(identifier);
+                var result = await Sources["soundcloud"].Search(identifier.Substring(9));
+                return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
+                {
+                    loadType = result.type,
+                    tracks = result.tracks.Select(track => new LoadTracksResp.TrackObj() { track = track.Track, info = track }).ToArray()
+                })), 200);
+            }
+            else if (LavaConfig.Sources.Youtube && Sources["youtube"].ValidateTrack(identifier))
+            {
+                var result = await Sources["youtube"].GetTrack(identifier);
                 LoadTracksResp.TrackObj[] tracks;
                 if (result.track == null)
                 {
@@ -130,6 +128,14 @@ namespace Lava.Net
                 {
                     loadType = result.type,
                     tracks = tracks
+                })), 200);
+            }
+            else
+            {
+                return (Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new LoadTracksResp()
+                {
+                    loadType = LoadType.NO_MATCHES,
+                    tracks = new LoadTracksResp.TrackObj[0]
                 })), 200);
             }
 

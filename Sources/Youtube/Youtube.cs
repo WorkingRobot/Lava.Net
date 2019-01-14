@@ -13,11 +13,14 @@ using System.Web;
 
 namespace Lava.Net.Sources.Youtube
 {
-    internal static class Youtube
+    internal class Youtube : ISource
     {
         private static HttpClient Client = new HttpClient();
 
-        public static async Task<(List<LavaTrack> tracks, LoadType type)> Search(string query)
+        private static readonly Regex VideoIdRegex = new Regex(@"^[a-zA-Z0-9_-]{11}$");
+        public bool ValidateTrack(string identifier) => VideoIdRegex.IsMatch(identifier);
+
+        public async Task<(List<LavaTrack> tracks, LoadType type)> Search(string query)
         {
             List<LavaTrack> tracks = new List<LavaTrack>();
             var doc = new HtmlDocument();
@@ -63,7 +66,7 @@ namespace Lava.Net.Sources.Youtube
             return (tracks, tracks.Count == 0 ? LoadType.NO_MATCHES : LoadType.SEARCH_RESULT);
         }
 
-        public static async Task<(LavaTrack track, LoadType type)> GetTrack(string identifier)
+        public async Task<(LavaTrack track, LoadType type)> GetTrack(string identifier)
         {
             JObject json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
             try
@@ -86,15 +89,17 @@ namespace Lava.Net.Sources.Youtube
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.ToString());
+                Console.WriteLine(e);
                 return (null, LoadType.LOAD_FAILED);
             }
         }
         
-        public static Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);
+        public Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);
 
         static Dictionary<string, string> CachedPlayers = new Dictionary<string, string>();
-        public static async Task<LavaStream> GetStream(string identifier)
+
+        // TODO: Rework picking the best stream.
+        public async Task<LavaStream> GetStream(string identifier)
         {
             var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
             if (!CachedPlayers.TryGetValue(json["assets"]["js"].ToString(), out string player_js)) // Used to decipher encrypted signatures
@@ -111,12 +116,12 @@ namespace Lava.Net.Sources.Youtube
                 throw new NotImplementedException("No audio formats.");
             }
             Console.WriteLine(fmts.Count() + " audio formats");
-            //fmts = fmts.Where(format => format.Codec == StreamCodec.OPUS); // Only look at opus streams
+            /*fmts = fmts.Where(format => format.Codec == StreamCodec.OPUS); // Only look at opus streams
             if (fmts.Count() == 0)
             {
                 throw new NotImplementedException("No opus formats.");
             }
-            Console.WriteLine(fmts.Count() + " opus formats");
+            Console.WriteLine(fmts.Count() + " opus formats");*/
             var fmt = fmts.MinBy(format => format.Bitrate); // Get the one with the lowest bitrate
 
             StringBuilder url = new StringBuilder(HttpUtility.UrlDecode(fmt.Url));
@@ -134,9 +139,10 @@ namespace Lava.Net.Sources.Youtube
             {
                 url.Append("&ratebypass=yes");
             }
-            return new LavaStream(await Utils.GetStream(url.ToString()));
+            return await LavaStream.FromUrl(url.ToString());
         }
 
+        // Below decrypts encrypted signatures in stream URLs
 
         private static readonly Regex DecryptionFunctionRegex = new Regex(@"\bc\s*&&\s*d\.set\([^,]+\s*,\s*\([^)]*\)\s*\(\s*([a-zA-Z0-9$]+)\(");
         private static readonly Regex FunctionRegex = new Regex(@"\w+(?:.|\[)(\""?\w+(?:\"")?)\]?\(");

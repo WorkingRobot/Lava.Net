@@ -20,11 +20,11 @@ namespace Lava.Net
         {
             public string Uri => $"{Server.Address}:{Server.Port}";
 
-            [JsonProperty("port")]
-            public readonly ushort Port;
-
             [JsonProperty("address")]
             public readonly string Address;
+
+            [JsonProperty("port")]
+            public readonly ushort Port;
 
             [JsonProperty("password")]
             public readonly string Authorization;

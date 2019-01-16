@@ -10,10 +10,13 @@ namespace Lava.Net.Streams
     {
         public IWaveSource Decoder;
         public IWaveSource OldDecoder;
+        public readonly Stream Stream;
+        public bool Completed { get; private set; } = false;
         private long EndTime = -1;
 
         public LavaStream(Stream stream)
         {
+            Stream = stream;
             try
             {
                 OldDecoder = Decoder = new FfmpegDecoder(stream).ChangeSampleRate(48000);
@@ -45,9 +48,23 @@ namespace Lava.Net.Streams
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            if (EndTime != -1 && Decoder.Position >= EndTime)
+            if (Completed) return 0;
+            //Console.WriteLine("P"+OldDecoder.Position);
+            //Console.WriteLine("L"+OldDecoder.GetLength());
+            if ((OldDecoder.Length != 0 && OldDecoder.Position == OldDecoder.Length) || (EndTime != -1 && Decoder.Position >= EndTime))
+            {
+                Console.WriteLine("Completed!");
+                Completed = true;
                 return 0;
-            return Decoder.Read(buffer, offset, count);
+            }
+            int read = Decoder.Read(buffer, offset, count);
+            if (read == 0)
+            {
+                Console.WriteLine("Completed?");
+                Completed = true;
+            }
+            //Console.WriteLine("R"+read);
+            return read;
         }
 
         public override long Seek(long offset, SeekOrigin origin)
@@ -72,6 +89,12 @@ namespace Lava.Net.Streams
         public override void Write(byte[] buffer, int offset, int count)
         {
             throw new InvalidOperationException("Cannot write");
+        }
+
+        public override void Close()
+        {
+            Decoder.Dispose();
+            Stream.Close();
         }
 
         public void SetEndTime(long endTime)

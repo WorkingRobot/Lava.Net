@@ -27,6 +27,11 @@ namespace Lava.Net
 
         public async Task Play(string track, long startTime = 0, long endTime = -1)
         {
+            if (!Stream?.Completed ?? false) // Stream exists but not complete
+            {
+                OpusStream.StopStream();
+                Stream.Close();
+            }
             try
             {
                 if (LavaConfig.Sources.Youtube && track.StartsWith("yt:"))
@@ -109,8 +114,10 @@ namespace Lava.Net
                 SpinWait.SpinUntil(() => audioConnection.Ready);
             byte[] buffer = new byte[OpusEncoder.FRAME_BYTES];
             int read;
-            OpusStream = new OpusStream(audioConnection.SendOpusAsync, ()=>
-            {
+            OpusStream = new OpusStream(audioConnection.SendOpusAsync, () =>
+            {/*
+                if (Stream.Completed)
+                    return Task.CompletedTask;*/
                 try
                 {
                     if ((read = Stream.Read(buffer, 0, buffer.Length)) > 0)
@@ -125,11 +132,18 @@ namespace Lava.Net
                 }
                 catch(Exception e)
                 {
-                    Console.WriteLine(e.ToString());
+                    Console.WriteLine(e);
                 }
                 return Task.CompletedTask;
             }, audioConnection.SetSpeakingAsync);
             OpusStream.StartStream();
+        }
+
+        public Task Disconnect()
+        {
+            OpusStream.StopStream();
+            Stream.Close();
+            return Task.WhenAll(audioConnection.Disconnect(), webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client closed connection", CancellationToken.None));
         }
     }
 }

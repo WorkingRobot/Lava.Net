@@ -27,6 +27,7 @@ namespace Lava.Net
         CancellationTokenSource heartbeatTokenSource;
         Task heartbeatTask;
 
+        CancellationTokenSource recieveTokenSource;
         Task recieveTask;
 
         public AudioConnection(ClientWebSocket socket)
@@ -37,12 +38,26 @@ namespace Lava.Net
 
         public Task Connect(ulong guild, ulong user, string sessionId, string token)
         {
-            recieveTask = RecieveTask();
+            recieveTokenSource = new CancellationTokenSource();
+            recieveTask = Task.Factory.StartNew(
+                function: RecieveTask,
+                cancellationToken: recieveTokenSource.Token,
+                creationOptions: TaskCreationOptions.LongRunning,
+                scheduler: TaskScheduler.Default);
             var obj = JsonConvert.SerializeObject(
                 new VoicePayload(0,
                 new IdentifyPayload(guild, user, sessionId, token))
                 );
             return Socket.SendAsync(Encoding.UTF8.GetBytes(obj), WebSocketMessageType.Text, true, CancellationToken.None);
+        }
+
+        public Task Disconnect()
+        {
+            Ready = false;
+            heartbeatTokenSource.Cancel();
+            recieveTokenSource.Cancel();
+            UdpClient.Dispose();
+            return Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client closed connection", CancellationToken.None);
         }
 
         Task Select()
@@ -95,7 +110,11 @@ namespace Lava.Net
                         heartbeatTask = null;
                     }
                     heartbeatTokenSource = new CancellationTokenSource();
-                    heartbeatTask = HeartbeatTask(heartbeatTokenSource.Token);
+                    heartbeatTask = Task.Factory.StartNew(
+                        function: HeartbeatTask,
+                        cancellationToken: heartbeatTokenSource.Token,
+                        creationOptions: TaskCreationOptions.LongRunning,
+                        scheduler: TaskScheduler.Default);
                     return;
                 case 6: // Heartbeat ACK
                     return;
@@ -118,6 +137,10 @@ namespace Lava.Net
                     }
                     Ready = true;
                     return;
+                case 5: // Set user speaking
+                case 13: // User left
+                case 12: // User joins
+                    return;
                 default:
                     Console.WriteLine("UNKNOWN AUDIO OP: " + data.ToString());
                     return;
@@ -129,14 +152,14 @@ namespace Lava.Net
             byte[] buffer = new byte[1024];
             try
             {
-                while (Socket.State == WebSocketState.Open)
+                while (Socket.State == WebSocketState.Open && !recieveTokenSource.IsCancellationRequested)
                 {
-                    var result = await Socket.ReceiveAsync(buffer, CancellationToken.None);
+                    var result = await Socket.ReceiveAsync(buffer, recieveTokenSource.Token);
 
                     switch (result.MessageType)
                     {
                         case WebSocketMessageType.Close:
-                            await Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, result.CloseStatusDescription, CancellationToken.None);
+                            await Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, result.CloseStatusDescription, recieveTokenSource.Token);
                             break;
                         case WebSocketMessageType.Binary:
                             Console.WriteLine("Recieved binary input: " + Encoding.UTF8.GetString(buffer));
@@ -149,6 +172,7 @@ namespace Lava.Net
                     Array.Clear(buffer, 0, 1024);
                 }
             }
+            catch (TaskCanceledException) { }
             catch (Exception e)
             {
                 Console.WriteLine("Exception: " + e);
@@ -160,18 +184,19 @@ namespace Lava.Net
             }
         }
 
-        async Task HeartbeatTask(CancellationToken token)
+        async Task HeartbeatTask()
         {
             try
             {
-                while (!token.IsCancellationRequested)
+                while (!heartbeatTokenSource.IsCancellationRequested)
                 {
-                    await Task.Delay(heartbeatInterval, token);
+                    await Task.Delay(heartbeatInterval, heartbeatTokenSource.Token);
                     await Socket.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(
                        new VoicePayload(3, DateTimeOffset.UtcNow.ToUnixTimeSeconds())
-                       )), WebSocketMessageType.Text, true, token);
+                       )), WebSocketMessageType.Text, true, heartbeatTokenSource.Token);
                 }
             }
+            catch (TaskCanceledException) { }
             catch (Exception e)
             {
                 Console.WriteLine("Heartbeat Exception: " + e);

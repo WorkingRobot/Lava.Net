@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace Lava.Net
 {
@@ -73,7 +74,11 @@ namespace Lava.Net
                         return;
                     }
 
-                    var _ = new LavaSocketConnection(webSocketContext.WebSocket, int.Parse(context.Request.Headers.Get("Num-Shards")), ulong.Parse(context.Request.Headers.Get("User-Id"))).HandleAsync().ConfigureAwait(false);
+                    var _ = Task.Factory.StartNew(
+                        function: new LavaSocketConnection(webSocketContext.WebSocket, int.Parse(context.Request.Headers.Get("Num-Shards")), ulong.Parse(context.Request.Headers.Get("User-Id"))).HandleAsync,
+                        cancellationToken: CancellationToken.None,
+                        creationOptions: TaskCreationOptions.LongRunning,
+                        scheduler: TaskScheduler.Default).ConfigureAwait(false);
                     return;
                 default:
                     Console.WriteLine("Unknown Path Requested: " + context.Request.Url.LocalPath);

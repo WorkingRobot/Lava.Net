@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -49,6 +50,10 @@ namespace Lava.Net
                     Array.Clear(buffer, 0, 1024);
                 }
             }
+            catch (WebSocketException)
+            {
+                Console.WriteLine("Connection closed by client");
+            }
             catch (Exception e)
             {
                 Console.WriteLine("Exception: " + e);
@@ -57,6 +62,7 @@ namespace Lava.Net
             {
                 if (Socket != null)
                     Socket.Dispose();
+                await Task.WhenAll(Connections.Values.Select(v => v.Disconnect())).ConfigureAwait(false);
             }
         }
 

@@ -14,6 +14,7 @@ namespace Lava.Net
         Func<byte[], int, int, uint, ushort, Task> SendOpusAsync;
         Func<Task> RequestFramesAsync;
         Func<bool, Task> SetSpeakingAsync;
+        CancellationToken cancelToken;
         Task BufferTask;
         ConcurrentQueue<byte[]> frames = new ConcurrentQueue<byte[]>();
 
@@ -35,18 +36,23 @@ namespace Lava.Net
             {
                 throw new NotSupportedException("You can't have a buffered stream start twice!");
             }
-            BufferTask = StartBuffer(cancelToken);
+            this.cancelToken = cancelToken;
+            BufferTask = Task.Factory.StartNew(
+                function: StartBuffer,
+                cancellationToken: cancelToken,
+                creationOptions: TaskCreationOptions.LongRunning,
+                scheduler: TaskScheduler.Default);
         }
 
         private int _silenceFrames;
-        async Task StartBuffer(CancellationToken _cancelToken)
+        async Task StartBuffer()
         {
             try
             {
                 long nextTick = Environment.TickCount;
                 ushort seq = 0;
                 uint timestamp = 0;
-                while (!_cancelToken.IsCancellationRequested || !frames.IsEmpty)
+                while (!cancelToken.IsCancellationRequested || !frames.IsEmpty)
                 {
                     long tick = Environment.TickCount;
                     long dist = nextTick - tick;
@@ -86,7 +92,7 @@ namespace Lava.Net
                         }
                     }
                     else
-                        await Task.Delay((int)dist/*, _cancelToken*/).ConfigureAwait(false);
+                        await Task.Delay((int)dist, cancelToken).ConfigureAwait(false);
                 }
                 await SendOpusAsync(SILENCE_FRAME, 0, SILENCE_FRAME.Length, timestamp, seq).ConfigureAwait(false);
             }

@@ -74,5 +74,16 @@ namespace Lava.Net
             }
             return Connections[guildId] = new LavaGuildConnection(guildId, UserId);
         }
+
+        public async Task<bool> RemoveConnection(ulong guildId)
+        {
+            if (Connections.TryGetValue(guildId, out LavaGuildConnection ret))
+            {
+                await ret.Disconnect();
+                Connections.Remove(guildId);
+                return true;
+            }
+            return false;
+        }
     }
 }

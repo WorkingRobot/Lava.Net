@@ -18,17 +18,23 @@ namespace Lava.Net
 
         public readonly ulong GuildId;
         public readonly ulong UserId;
+        public readonly LavaSocketConnection Source;
 
-        public LavaGuildConnection(ulong guildId, ulong userId)
+        public LavaGuildConnection(ulong guildId, ulong userId, LavaSocketConnection source)
         {
             GuildId = guildId;
             UserId = userId;
+            Source = source;
         }
 
-        public async Task Play(string track, long startTime = 0, long endTime = -1)
+        public async Task Play(string track, long startTime = 0, long endTime = -1, bool noReplace = false)
         {
             if (!Stream?.Completed ?? false) // Stream exists but not complete
             {
+                if (noReplace)
+                {
+                    return;
+                }
                 OpusStream.StopStream();
                 Stream.Close();
             }
@@ -103,7 +109,10 @@ namespace Lava.Net
                     var startTime = packet.Value<long>("startTime"); // 0 if unknown
                     if (!packet.TryGetValue("endTime", out var endTime)) // -1 if unknown
                         endTime = -1;
-                    await Play(packet["track"].ToString(), startTime, endTime.ToObject<long>());
+                    await Play(packet["track"].ToString(), startTime, endTime.ToObject<long>(), packet.Value<bool>("noReplace"));
+                    return;
+                case "stop": // Unsure if stop or destroy
+                    await Source.RemoveConnection(GuildId);
                     return;
             }
         }

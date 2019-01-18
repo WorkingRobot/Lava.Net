@@ -10,7 +10,7 @@ To Do:
  - [x] Add ability to send opus encoded voice
  - [x] Get and send YouTube stream to voice
  - [x] Allow playing with custom start and end time (Note: A lot of Lavalink sources don't actually seek for some reason, like Youtube or Soundcloud)
- - [ ] Enable pausing, stopping, and destroy payloads
+ - [x] Enable pausing, stopping, and destroy payloads
  - [ ] Enable seeking and volume payloads
  - [ ] Send player update payload
  - [ ] Send stats payload

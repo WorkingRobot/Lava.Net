@@ -18,7 +18,7 @@ namespace Lava.Net.Streams
             int bufferOffset = offset;
             for (int i = 0; i < read; i++)
             {
-                int value = (int)(Buffer[i] * short.MaxValue * 0.7f); // Without modifier song turns to earrape :)
+                int value = (int)(Buffer[i] * 0.8f * short.MaxValue); // Without modifier song turns to earrape :)
                 var bytes = BitConverter.GetBytes(value);
 
                 buffer[bufferOffset++] = bytes[0];

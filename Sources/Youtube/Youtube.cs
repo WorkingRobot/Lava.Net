@@ -96,15 +96,15 @@ namespace Lava.Net.Sources.Youtube
         
         public Task<LavaStream> GetStream(LavaTrack track) => GetStream(track.Identifier);
 
-        static Dictionary<string, string> CachedPlayers = new Dictionary<string, string>();
+        static Dictionary<string, CipherOperation[]> CachedPlayers = new Dictionary<string, CipherOperation[]>();
 
         // TODO: Rework picking the best stream.
         public async Task<LavaStream> GetStream(string identifier)
         {
             var json = JObject.Parse((await Client.GetStringAsync("https://www.youtube.com/watch?v=" + identifier)).Split(";ytplayer.config = ", 2)[1].Split(";ytplayer.load", 2)[0]);
-            if (!CachedPlayers.TryGetValue(json["assets"]["js"].ToString(), out string player_js)) // Used to decipher encrypted signatures
+            if (!CachedPlayers.TryGetValue(json["assets"]["js"].ToString(), out CipherOperation[] ops)) // Used to decipher encrypted signatures
             {
-                player_js = CachedPlayers[json["assets"]["js"].ToString()] = await Client.GetStringAsync("https://www.youtube.com" + json["assets"]["js"].ToString());
+                ops = CachedPlayers[json["assets"]["js"].ToString()] = GetCipher(await Client.GetStringAsync("https://www.youtube.com" + json["assets"]["js"].ToString()));
             }
 
             var fmts = json["args"]["adaptive_fmts"].ToString().Split(",") // Get formats and split by the delimiter
@@ -130,7 +130,7 @@ namespace Lava.Net.Sources.Youtube
                 url.Append("&signature=");
                 if (fmt.SignatureEncrypted)
                 {
-                    url.Append(DecryptSignature(fmt.Signature, player_js));
+                    url.Append(DecryptSignature(fmt.Signature, ops));
                 }
                 else
                     url.Append(fmt.Signature);
@@ -144,156 +144,161 @@ namespace Lava.Net.Sources.Youtube
 
         // Below decrypts encrypted signatures in stream URLs
 
-        private static readonly Regex DecryptionFunctionRegex = new Regex(@"\bc\s*&&\s*d\.set\([^,]+\s*,\s*\([^)]*\)\s*\(\s*([a-zA-Z0-9$]+)\(");
-        private static readonly Regex FunctionRegex = new Regex(@"\w+(?:.|\[)(\""?\w+(?:\"")?)\]?\(");
+        private const string VARIABLE_PART = @"[a-zA-Z_\$][a-zA-Z_0-9]*";
+        private const string VARIABLE_PART_DEFINE = @"\""?" + VARIABLE_PART + @"\""?";
+        private const string BEFORE_ACCESS = @"(?:\[\"" |\.)";
+        private const string AFTER_ACCESS = @"(?:\""\]|)";
+        private const string VARIABLE_PART_ACCESS = BEFORE_ACCESS + VARIABLE_PART + AFTER_ACCESS;
+        private const string REVERSE_PART = @":function\(a\)\{(?:return )?a\.reverse\(\)\}";
+        private const string SLICE_PART = @":function\(a,b\)\{return a\.slice\(b\)\}";
+        private const string SPLICE_PART = @":function\(a,b\)\{a\.splice\(0,b\)\}";
+        private const string SWAP_PART = @":function\(a,b\)\{var c=a\[0\];a\[0\]=a\[b%a\.length\];a\[b(?:%a.length|)\]=c(?:;return a)?\}";
 
-        private static string DecryptSignature(string signature, string js)
+        private static Regex functionPattern = new Regex(
+            "function(?: " + VARIABLE_PART + @")?\(a\)\{" +
+            @"a=a\.split\(""""\);\s*" +
+            "((?:(?:a=)?" + VARIABLE_PART + VARIABLE_PART_ACCESS + @"\(a,\d+\);)+)" +
+            @"return a\.join\(""""\)" +
+            @"\}"
+        );
+
+        private static Regex actionsPattern = new Regex(
+            "var (" + VARIABLE_PART + ")=\\{((?:(?:" +
+            VARIABLE_PART_DEFINE + REVERSE_PART + "|" +
+            VARIABLE_PART_DEFINE + SLICE_PART + "|" +
+            VARIABLE_PART_DEFINE + SPLICE_PART + "|" +
+            VARIABLE_PART_DEFINE + SWAP_PART +
+            @"),?\n?)+)\};"
+        );
+
+        private const string PATTERN_PREFIX = @"(?:^|,)\""?(" + VARIABLE_PART + @")\""?";
+
+        private static Regex reversePattern = new Regex(PATTERN_PREFIX + REVERSE_PART, RegexOptions.Multiline);
+        private static Regex slicePattern = new Regex(PATTERN_PREFIX + SLICE_PART, RegexOptions.Multiline);
+        private static Regex splicePattern = new Regex(PATTERN_PREFIX + SPLICE_PART, RegexOptions.Multiline);
+        private static Regex swapPattern = new Regex(PATTERN_PREFIX + SWAP_PART, RegexOptions.Multiline);
+
+        private CipherOperation[] GetCipher(string script)
         {
-            var functionLines = GetDecryptionFunctionLines(js);
-
-            var decryptor = new Decryptor();
-            foreach (var functionLine in functionLines)
+            var actions = actionsPattern.Match(script).Groups;
+            if (actions.Count == 0)
             {
-                if (decryptor.IsComplete)
-                {
-                    break;
-                }
+                throw new ArgumentException("Must find action functions from script");
+            }
 
-                var match = FunctionRegex.Match(functionLine);
-                if (match.Success)
+            string actionBody = actions[2].Value;
+
+            string reverseKey = ExtractDollarEscapedFirstGroup(reversePattern, actionBody);
+            string slicePart = ExtractDollarEscapedFirstGroup(slicePattern, actionBody);
+            string splicePart = ExtractDollarEscapedFirstGroup(splicePattern, actionBody);
+            string swapKey = ExtractDollarEscapedFirstGroup(swapPattern, actionBody);
+
+            var extractor = new Regex(
+                "(?:a=)?" + Regex.Escape(actions[1].Value) + BEFORE_ACCESS + "(" +
+                string.Join("|", GetQuotedFunctions(reverseKey, slicePart, splicePart, swapKey)) +
+                ")" + AFTER_ACCESS + "\\(a,(\\d+)\\)"
+            );
+
+            var functions = functionPattern.Match(script).Groups;
+            if (functions.Count == 0)
+            {
+                throw new ArgumentException("Must find decipher function from script");
+            }
+
+            var matcher = extractor.Matches(functions[1].Value);
+            List<CipherOperation> ops = new List<CipherOperation>();
+            foreach (Match m in matcher)
+            {
+                string type = m.Groups[1].Value;
+                if (type == swapKey)
                 {
-                    decryptor.AddFunction(js, match.Groups[1].Value);
+                    ops.Add(new CipherOperation(OperationType.SWAP, int.Parse(m.Groups[2].Value)));
+                }
+                else if (type == reverseKey)
+                {
+                    ops.Add(new CipherOperation(OperationType.REVERSE));
+                }
+                else if (type == slicePart)
+                {
+                    ops.Add(new CipherOperation(OperationType.SLICE, int.Parse(m.Groups[2].Value)));
+                }
+                else if (type == splicePart)
+                {
+                    ops.Add(new CipherOperation(OperationType.SPLICE, int.Parse(m.Groups[2].Value)));
+                }
+                else
+                {
+                    throw new ArgumentException("Unknown cipher function " + type);
                 }
             }
 
-            foreach (var functionLine in functionLines)
+            if (ops.Count == 0)
             {
-                var match = FunctionRegex.Match(functionLine);
-                if (match.Success)
-                {
-                    signature = decryptor.ExecuteFunction(signature, functionLine, match.Groups[1].Value);
-                }
+                throw new ArgumentException("No operations detected from cipher extracted");
             }
 
-            return signature;
+            return ops.ToArray();
         }
 
-        private static string[] GetDecryptionFunctionLines(string js)
+        private string DecryptSignature(string signature, CipherOperation[] ops)
         {
-            var decryptionFunction = GetDecryptionFunction(js);
-            var match =
-                Regex.Match(
-                    js,
-                    $@"(?!h\.){Regex.Escape(decryptionFunction)}=function\(\w+\)\{{(.*?)\}}",
-                    RegexOptions.Singleline);
-            if (!match.Success)
+            StringBuilder builder = new StringBuilder(signature);
+            foreach (var op in ops)
             {
-                throw new Exception($"{nameof(GetDecryptionFunctionLines)} failed");
+                switch (op.Type)
+                {
+                    case OperationType.SWAP:
+                        int position = op.Param % builder.Length;
+                        char temp = builder[0];
+                        builder[0] = builder[position];
+                        builder[position] = temp;
+                        break;
+                    case OperationType.REVERSE:
+                        char[] array = new char[builder.Length];
+                        builder.CopyTo(0, array, 0, builder.Length);
+                        Array.Reverse(array);
+                        builder = new StringBuilder(new string(array));
+                        break;
+                    case OperationType.SLICE:
+                    case OperationType.SPLICE:
+                        builder.Remove(0, op.Param);
+                        break;
+                }
             }
-
-            return match.Groups[1].Value.Split(';');
+            return builder.ToString();
         }
 
-        private static string GetDecryptionFunction(string js)
+        private static string ExtractDollarEscapedFirstGroup(Regex pattern, string text)
         {
-            var match = DecryptionFunctionRegex.Match(js);
-            if (!match.Success)
-            {
-                throw new Exception($"{nameof(GetDecryptionFunction)} failed");
-            }
-
-            return match.Groups[1].Value;
+            var matcher = pattern.Match(text).Groups;
+            return matcher.Count != 0 ? matcher[1].Value.Replace("$", "\\$") : null;
         }
 
-        private class Decryptor
+        private static IEnumerable<string> GetQuotedFunctions(params string[] functionNames)
         {
-            private static readonly Regex ParametersRegex = new Regex(@"\(\w+,(\d+)\)");
+            return functionNames
+                .Where(func => !string.IsNullOrWhiteSpace(func))
+                .Select(func => Regex.Escape(func));
+        }
 
-            private readonly Dictionary<string, FunctionType> _functionTypes = new Dictionary<string, FunctionType>();
-            private readonly StringBuilder _stringBuilder = new StringBuilder();
+        public struct CipherOperation
+        {
+            public OperationType Type;
+            public int Param;
 
-            public bool IsComplete =>
-                _functionTypes.Count == Enum.GetValues(typeof(FunctionType)).Length;
-
-            public void AddFunction(string js, string function)
+            public CipherOperation(OperationType type, int param = 0)
             {
-                var escapedFunction = Regex.Escape(function);
-                FunctionType? type = null;
-                if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\(\w+\)"))
-                {
-                    type = FunctionType.Reverse;
-                }
-                else if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\([a],b\).(\breturn\b)?.?\w+\."))
-                {
-                    type = FunctionType.Slice;
-                }
-                else if (Regex.IsMatch(js, $@"{escapedFunction}:\bfunction\b\(\w+\,\w\).\bvar\b.\bc=a\b"))
-                {
-                    type = FunctionType.Swap;
-                }
-
-                if (type.HasValue)
-                {
-                    _functionTypes[function] = type.Value;
-                }
+                Type = type;
+                Param = param;
             }
+        }
 
-            public string ExecuteFunction(string signature, string line, string function)
-            {
-                if (!_functionTypes.TryGetValue(function, out var type))
-                {
-                    return signature;
-                }
-
-                switch (type)
-                {
-                    case FunctionType.Reverse:
-                        return Reverse(signature);
-                    case FunctionType.Slice:
-                    case FunctionType.Swap:
-                        var index =
-                            int.Parse(
-                                ParametersRegex.Match(line).Groups[1].Value,
-                                NumberStyles.AllowThousands,
-                                NumberFormatInfo.InvariantInfo);
-                        return
-                            type == FunctionType.Slice
-                                ? Slice(signature, index)
-                                : Swap(signature, index);
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(type));
-                }
-            }
-
-            private string Reverse(string signature)
-            {
-                _stringBuilder.Clear();
-                for (var index = signature.Length - 1; index >= 0; index--)
-                {
-                    _stringBuilder.Append(signature[index]);
-                }
-
-                return _stringBuilder.ToString();
-            }
-
-            private string Slice(string signature, int index) =>
-                signature.Substring(index);
-
-            private string Swap(string signature, int index)
-            {
-                _stringBuilder.Clear();
-                _stringBuilder.Append(signature);
-                _stringBuilder[0] = signature[index];
-                _stringBuilder[index] = signature[0];
-                return _stringBuilder.ToString();
-            }
-
-            private enum FunctionType
-            {
-                Reverse,
-                Slice,
-                Swap
-            }
+        public enum OperationType
+        {
+            SWAP,
+            REVERSE,
+            SLICE,
+            SPLICE
         }
     }
 }

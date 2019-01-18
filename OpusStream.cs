@@ -59,15 +59,14 @@ namespace Lava.Net
             }
         }
 
+        public void Pause(bool paused) => Buffered.Pause(paused);
+
         public void StartStream()
         {
             BufferedTaskToken = new CancellationTokenSource();
             Buffered.StartTask(BufferedTaskToken.Token);
         }
 
-        public void StopStream()
-        {
-            BufferedTaskToken.Cancel();
-        }
+        public void StopStream() => BufferedTaskToken.Cancel();
     }
 }

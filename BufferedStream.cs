@@ -17,6 +17,7 @@ namespace Lava.Net
         CancellationToken cancelToken;
         Task BufferTask;
         ConcurrentQueue<byte[]> frames = new ConcurrentQueue<byte[]>();
+        bool Paused;
 
         public BufferedStream(Func<byte[], int, int, uint, ushort, Task> sendOpus, Func<Task> requestFrames, Func<bool, Task> setSpeaking)
         {
@@ -52,10 +53,16 @@ namespace Lava.Net
                 long nextTick = Environment.TickCount;
                 ushort seq = 0;
                 uint timestamp = 0;
-                while (!cancelToken.IsCancellationRequested || !frames.IsEmpty)
+                while (Paused || !cancelToken.IsCancellationRequested || !frames.IsEmpty)
                 {
                     long tick = Environment.TickCount;
                     long dist = nextTick - tick;
+                    if (Paused)
+                    {
+                        nextTick += TICKS_PER_FRAME;
+                        await Task.Delay(dist <= 0 ? TICKS_PER_FRAME : (int)dist, cancelToken).ConfigureAwait(false);
+                        continue;
+                    }
                     if (dist <= 0)
                     {
                         if (frames.TryDequeue(out byte[] frame))
@@ -97,6 +104,12 @@ namespace Lava.Net
                 await SendOpusAsync(SILENCE_FRAME, 0, SILENCE_FRAME.Length, timestamp, seq).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
+        }
+
+        public void Pause(bool paused)
+        {
+            Console.WriteLine("Paused now " + paused);
+            Paused = paused;
         }
     }
 }

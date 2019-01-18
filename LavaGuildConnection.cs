@@ -1,5 +1,4 @@
 ﻿using CSCore;
-using Lava.Net.Sources.Youtube;
 using Lava.Net.Streams;
 using Newtonsoft.Json.Linq;
 using System;
@@ -35,7 +34,7 @@ namespace Lava.Net
                 {
                     return;
                 }
-                OpusStream.StopStream();
+                //OpusStream.StopStream();
                 Stream.Close();
             }
             try
@@ -111,7 +110,18 @@ namespace Lava.Net
                         endTime = -1;
                     await Play(packet["track"].ToString(), startTime, endTime.ToObject<long>(), packet.Value<bool>("noReplace"));
                     return;
+                case "pause":
+                    if (packet.TryGetValue("pause", out var paused))
+                    {
+                        Console.WriteLine(packet.ToString());
+                        OpusStream.Pause(paused.Value<bool>());
+                    }
+                    return;
                 case "stop": // Unsure if stop or destroy
+                    OpusStream.StopStream();
+                    Stream.Close();
+                    return;
+                case "destroy":
                     await Source.RemoveConnection(GuildId);
                     return;
             }
@@ -119,6 +129,7 @@ namespace Lava.Net
 
         public void CreateStream()
         {
+            if (OpusStream != null) return;
             if (!audioConnection.Ready)
                 SpinWait.SpinUntil(() => audioConnection.Ready);
             byte[] buffer = new byte[OpusEncoder.FRAME_BYTES];
@@ -136,7 +147,7 @@ namespace Lava.Net
                     }
                     else
                     {
-                        OpusStream.StopStream();
+                        //OpusStream.StopStream();
                     }
                 }
                 catch(Exception e)

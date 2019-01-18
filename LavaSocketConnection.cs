@@ -72,7 +72,7 @@ namespace Lava.Net
             {
                 return ret;
             }
-            return Connections[guildId] = new LavaGuildConnection(guildId, UserId);
+            return Connections[guildId] = new LavaGuildConnection(guildId, UserId, this);
         }
 
         public async Task<bool> RemoveConnection(ulong guildId)

@@ -90,9 +90,10 @@ namespace Lava.Net.Streams
         {
             throw new InvalidOperationException("Cannot write");
         }
-
+        
         public override void Close()
         {
+            Completed = true;
             Decoder.Dispose();
             Stream.Close();
         }

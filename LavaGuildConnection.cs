@@ -14,6 +14,8 @@ namespace Lava.Net
         AudioConnection audioConnection;
         OpusStream OpusStream;
         LavaStream Stream;
+        float Volume = 1;
+        EqualizerBand[] EqBands;
 
         public readonly ulong GuildId;
         public readonly ulong UserId;
@@ -60,6 +62,9 @@ namespace Lava.Net
                     Console.WriteLine("Unknown track: " + track);
                 }
                 Stream.SetEndTime(endTime);
+                Stream.SetVolume(Volume);
+                if (EqBands != null)
+                    Stream.SetEqualizer(EqBands);
                 CreateStream();
             }
             catch(Exception e)
@@ -113,16 +118,33 @@ namespace Lava.Net
                 case "pause":
                     if (packet.TryGetValue("pause", out var paused))
                     {
-                        Console.WriteLine(packet.ToString());
                         OpusStream.Pause(paused.Value<bool>());
                     }
                     return;
-                case "stop": // Unsure if stop or destroy
+                case "stop":
                     OpusStream.StopStream();
                     Stream.Close();
                     return;
                 case "destroy":
                     await Source.RemoveConnection(GuildId);
+                    return;
+                case "volume":
+                    if (packet.TryGetValue("volume", out var volume))
+                    {
+                        short vol = packet.Value<short>();
+                        if (vol >= 0 && vol <= 1000)
+                        {
+                            Volume = vol / 100f;
+                            Stream.SetVolume(Volume);
+                        }
+                    }
+                    return;
+                case "equalizer":
+                    EqBands = packet["bands"].ToObject<EqualizerBand[]>() ?? EqBands;
+                    if (EqBands != null)
+                    {
+                        Stream.SetEqualizer(EqBands);
+                    }
                     return;
             }
         }

@@ -108,7 +108,6 @@ namespace Lava.Net
 
         public void Pause(bool paused)
         {
-            Console.WriteLine("Paused now " + paused);
             Paused = paused;
         }
     }

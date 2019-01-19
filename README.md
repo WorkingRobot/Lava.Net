@@ -15,7 +15,7 @@ To Do:
  - [ ] Send player update payload
  - [ ] Send stats payload
  - [ ] Send events
- - [ ] Enable equalizer payload
+ - [x] Enable equalizer payload
  - [x] Allow SoundCloud searching and streaming
  - [ ] Allow local and web (HTTP) streaming
  - [ ] More will be added as the list progresses

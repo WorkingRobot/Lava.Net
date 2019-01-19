@@ -8,7 +8,9 @@ namespace Lava.Net.Streams
 {
     class LavaStream : Stream
     {
-        public IWaveSource Decoder;
+        public LavaSampleToPcm16 Decoder;
+        ISampleSource SampleSource;
+        EqualizerStream Equalizer;
         public IWaveSource OldDecoder;
         public readonly Stream Stream;
         public bool Completed { get; private set; } = false;
@@ -19,9 +21,10 @@ namespace Lava.Net.Streams
             Stream = stream;
             try
             {
-                OldDecoder = Decoder = new FfmpegDecoder(stream).ChangeSampleRate(48000);
-                if (Decoder.WaveFormat.BitsPerSample != 16 || Decoder.WaveFormat.WaveFormatTag != AudioEncoding.Pcm)
-                    Decoder = new LavaSampleToPcm16(Decoder.ToSampleSource());
+                OldDecoder = new FfmpegDecoder(stream).ChangeSampleRate(48000);
+                SampleSource = OldDecoder.ToSampleSource().ToStereo();
+                Equalizer = new EqualizerStream(SampleSource);
+                Decoder = new LavaSampleToPcm16(Equalizer);
             }
             catch (Exception e)
             {
@@ -102,6 +105,20 @@ namespace Lava.Net.Streams
         {
             if (endTime != -1)
                 EndTime = Decoder.WaveFormat.MillisecondsToBytes(endTime);
+        }
+
+        public void SetVolume(float volume)
+        {
+            Decoder.Volume = volume;
+        }
+
+        public void SetEqualizer(EqualizerBand[] bands)
+        {
+            foreach (var band in bands)
+            {
+                Equalizer.SetBandGain(band.Band, band.Gain);
+            }
+            Equalizer.Enabled = true;
         }
     }
 }

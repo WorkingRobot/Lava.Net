@@ -100,52 +100,62 @@ namespace Lava.Net
             await audioConnection.Connect(GuildId, UserId, sessionId, token);
         }
 
-        public async Task Message(JObject packet)
+        public Task Message(JObject packet)
         {
             switch (packet["op"].ToString())
             {
                 case "voiceUpdate":
                     if (string.IsNullOrEmpty(packet["event"].Value<string>("endpoint")))
-                        return;
-                    await VoiceUpdate(packet.Value<string>("sessionId"), packet["event"].Value<string>("endpoint"), packet["event"].Value<string>("token"));
-                    break;
+                        return Task.CompletedTask;
+                    return VoiceUpdate(packet.Value<string>("sessionId"), packet["event"].Value<string>("endpoint"), packet["event"].Value<string>("token"));
                 case "play":
                     var startTime = packet.Value<long>("startTime"); // 0 if unknown
                     if (!packet.TryGetValue("endTime", out var endTime)) // -1 if unknown
                         endTime = -1;
-                    await Play(packet["track"].ToString(), startTime, endTime.ToObject<long>(), packet.Value<bool>("noReplace"));
-                    return;
+                    return Play(packet["track"].ToString(), startTime, endTime.Value<long>(), packet.Value<bool>("noReplace"));
                 case "pause":
                     if (packet.TryGetValue("pause", out var paused))
                     {
                         OpusStream.Pause(paused.Value<bool>());
                     }
-                    return;
+                    return Task.CompletedTask;
                 case "stop":
                     OpusStream.StopStream();
                     Stream.Close();
-                    return;
+                    return Task.CompletedTask;
                 case "destroy":
-                    await Source.RemoveConnection(GuildId);
-                    return;
+                    return Source.RemoveConnection(GuildId);
+                case "seek":
+                    if (packet.TryGetValue("position", out var position))
+                    {
+                        short pos = position.Value<short>();
+                        if (Stream.Decoder.CanSeek)
+                        {
+                            Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(pos));
+                        }
+                    }
+                    return Task.CompletedTask;
                 case "volume":
                     if (packet.TryGetValue("volume", out var volume))
                     {
-                        short vol = packet.Value<short>();
+                        short vol = volume.Value<short>();
                         if (vol >= 0 && vol <= 1000)
                         {
                             Volume = vol / 100f;
                             Stream.SetVolume(Volume);
                         }
                     }
-                    return;
+                    return Task.CompletedTask;
                 case "equalizer":
                     EqBands = packet["bands"].ToObject<EqualizerBand[]>() ?? EqBands;
                     if (EqBands != null)
                     {
                         Stream.SetEqualizer(EqBands);
                     }
-                    return;
+                    return Task.CompletedTask;
+                default:
+                    Console.WriteLine("Unknown op: " + packet["op"]);
+                    return Task.CompletedTask;
             }
         }
 

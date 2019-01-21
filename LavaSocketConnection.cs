@@ -14,13 +14,15 @@ namespace Lava.Net
         public readonly WebSocket Socket;
         public readonly int ShardCount;
         public readonly ulong UserId;
+        public readonly LavaSocketServer Server;
         public SortedDictionary<ulong, LavaGuildConnection> Connections = new SortedDictionary<ulong, LavaGuildConnection>();
 
-        public LavaSocketConnection(WebSocket socket, int shardCount, ulong userId)
+        public LavaSocketConnection(WebSocket socket, int shardCount, ulong userId, LavaSocketServer server)
         {
             Socket = socket;
             ShardCount = shardCount;
             UserId = userId;
+            Server = server;
         }
 
         public async Task HandleAsync()
@@ -62,8 +64,14 @@ namespace Lava.Net
             {
                 if (Socket != null)
                     Socket.Dispose();
+                Server.RemoveConnection(this);
                 await Task.WhenAll(Connections.Values.Select(v => v.Disconnect())).ConfigureAwait(false);
             }
+        }
+
+        public Task SendAsync(string inp, CancellationToken token = default)
+        {
+            return Socket.SendAsync(Encoding.UTF8.GetBytes(inp), WebSocketMessageType.Text, true, token);
         }
 
         public LavaGuildConnection GetConnection(ulong guildId)

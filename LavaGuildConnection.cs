@@ -21,6 +21,9 @@ namespace Lava.Net
         public readonly ulong UserId;
         public readonly LavaSocketConnection Source;
 
+        public bool Paused { get; private set; } = false;
+        public bool Playing => !Stream?.Completed ?? false;
+
         public LavaGuildConnection(ulong guildId, ulong userId, LavaSocketConnection source)
         {
             GuildId = guildId;
@@ -30,7 +33,7 @@ namespace Lava.Net
 
         public async Task Play(string track, long startTime = 0, long endTime = -1, bool noReplace = false)
         {
-            if (!Stream?.Completed ?? false) // Stream exists but not complete
+            if (Playing) // Stream exists but not complete
             {
                 if (noReplace)
                 {
@@ -44,23 +47,21 @@ namespace Lava.Net
                 if (LavaConfig.Sources.Youtube && track.StartsWith("yt:"))
                 {
                     Stream = await LavaSocketServer.Sources["youtube"].GetStream(track.Substring(3));
-                    if (Stream.Decoder.CanSeek)
-                    {
-                        Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(startTime));
-                    }
                 }
                 else if (LavaConfig.Sources.Soundcloud && track.StartsWith("sc:"))
                 {
                     Stream = await LavaSocketServer.Sources["soundcloud"].GetStream(track.Substring(3));
-                    if (Stream.Decoder.CanSeek)
-                    {
-                        Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(startTime));
-                    }
                 }
                 else
                 {
                     Console.WriteLine("Unknown track: " + track);
+                    return;
                 }
+                if (Stream.Decoder.CanSeek)
+                {
+                    Stream.Decoder.SetPosition(TimeSpan.FromMilliseconds(startTime));
+                }
+                Paused = false;
                 Stream.SetEndTime(endTime);
                 Stream.SetVolume(Volume);
                 if (EqBands != null)
@@ -116,7 +117,8 @@ namespace Lava.Net
                 case "pause":
                     if (packet.TryGetValue("pause", out var paused))
                     {
-                        OpusStream.Pause(paused.Value<bool>());
+                        Paused = paused.Value<bool>();
+                        OpusStream.Pause(Paused);
                     }
                     return Task.CompletedTask;
                 case "stop":
@@ -187,7 +189,7 @@ namespace Lava.Net
                     Console.WriteLine(e);
                 }
                 return Task.CompletedTask;
-            }, audioConnection.SetSpeakingAsync);
+            }, audioConnection.SetSpeakingAsync, Source.Server.Stats.IncrementFrame);
             OpusStream.StartStream();
         }
 

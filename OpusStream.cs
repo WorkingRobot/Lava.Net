@@ -9,9 +9,9 @@ namespace Lava.Net
         BufferedStream Buffered;
         CancellationTokenSource BufferedTaskToken;
         
-        public OpusStream(Func<byte[], int, int, uint, ushort, Task> sendOpus, Func<Task> requestFrames, Func<bool, Task> setSpeaking)
+        public OpusStream(Func<byte[], int, int, uint, ushort, Task> sendOpus, Func<Task> requestFrames, Func<bool, Task> setSpeaking, Action<FrameType> sentFrame)
         {
-            Buffered = new BufferedStream(sendOpus, requestFrames, setSpeaking);
+            Buffered = new BufferedStream(sendOpus, requestFrames, setSpeaking, sentFrame);
         }
         
         private readonly byte[] _buffer = new byte[OpusEncoder.FRAME_BYTES];

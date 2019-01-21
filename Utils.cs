@@ -52,9 +52,9 @@ namespace Lava.Net
         {
             try
             {
-                
                 var response = await Client.GetAsync(url,
                     HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsStreamAsync();
             }
             catch (Exception e)

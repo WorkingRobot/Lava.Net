@@ -18,17 +18,31 @@ namespace Lava.Net
     {
         private readonly string ListenerUri;
 
+        public List<LavaSocketConnection> Connections { get; private set; } = new List<LavaSocketConnection>();
+        internal StatsCollector Stats;
+        Task StatsUpdateTask;
+        CancellationTokenSource StatsUpdateToken;
+
         public LavaSocketServer(string listenerUri)
         {
             ListenerUri = listenerUri;
+            Stats = new StatsCollector(this);
         }
 
         public async Task StartAsync()
         {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
             HttpListener listener = new HttpListener();
             Console.WriteLine("Listening to " + ListenerUri);
             listener.Prefixes.Add(ListenerUri);
             listener.Start();
+            Stats.GetStats();
+            StatsUpdateToken = new CancellationTokenSource();
+            StatsUpdateTask = Task.Factory.StartNew(
+                        function: StatsUpdate,
+                        cancellationToken: StatsUpdateToken.Token,
+                        creationOptions: TaskCreationOptions.LongRunning,
+                        scheduler: TaskScheduler.Default);
 
             while (true)
             {
@@ -74,8 +88,11 @@ namespace Lava.Net
                         return;
                     }
 
+                    var conn = new LavaSocketConnection(webSocketContext.WebSocket, int.Parse(context.Request.Headers.Get("Num-Shards")), ulong.Parse(context.Request.Headers.Get("User-Id")), this);
+                    Connections.Add(conn);
+
                     var _ = Task.Factory.StartNew(
-                        function: new LavaSocketConnection(webSocketContext.WebSocket, int.Parse(context.Request.Headers.Get("Num-Shards")), ulong.Parse(context.Request.Headers.Get("User-Id"))).HandleAsync,
+                        function: conn.HandleAsync,
                         cancellationToken: CancellationToken.None,
                         creationOptions: TaskCreationOptions.LongRunning,
                         scheduler: TaskScheduler.Default).ConfigureAwait(false);
@@ -83,6 +100,24 @@ namespace Lava.Net
                 default:
                     Console.WriteLine("Unknown Path Requested: " + context.Request.Url.LocalPath);
                     return;
+            }
+        }
+
+        internal void RemoveConnection(LavaSocketConnection conn)
+        {
+            if (conn.Server == this)
+            {
+                Connections.Remove(conn);
+            }
+        }
+
+        async Task StatsUpdate()
+        {
+            while (!StatsUpdateToken.IsCancellationRequested)
+            {
+                await Task.Delay(120 * 1000).ConfigureAwait(false);
+                var stats = JsonConvert.SerializeObject(Stats.GetStats());
+                await Task.WhenAll(Connections.Select(conn => conn.SendAsync(stats, StatsUpdateToken.Token))).ConfigureAwait(false);
             }
         }
 
@@ -143,8 +178,6 @@ namespace Lava.Net
                     tracks = new LoadTracksResp.TrackObj[0]
                 })), 200);
             }
-
-            return (new ReadOnlyMemory<byte>(), 500);
         }
 
         struct LoadTracksResp

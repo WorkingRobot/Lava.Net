@@ -13,9 +13,10 @@ To Do:
  - [x] Enable pausing, stopping, and destroy payloads
  - [x] Enable seeking and volume payloads
  - [ ] Send player update payload
- - [ ] Send stats payload
+ - [x] Send stats payload
  - [ ] Send events
  - [x] Enable equalizer payload
  - [x] Allow SoundCloud searching and streaming
  - [ ] Allow local and web (HTTP) streaming
+ - [ ] Implement a better streaming system for URLs (less weird errors)
  - [ ] More will be added as the list progresses
